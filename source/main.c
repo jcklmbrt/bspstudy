@@ -4,12 +4,13 @@
 	#include <windows.h>
 #endif
 #include <GL/gl.h>
-#include <GL/GLU.h>
+#include <GL/glu.h>
 #include <GLFW/glfw3.h>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -196,8 +197,8 @@ int bsp_entparse(const char *entdata, int32_t entdatasize,
 
 	/* ...or you can just use a regular expression */
 	/* {\s(".*" ".*"\s)+} */
-	char  token[MAX_VALUE];
-	char *end = entdata + entdatasize;
+	char token[MAX_VALUE];
+	const char *end = entdata + entdatasize;
 	size_t toklen   = 0;
 	int numentities = 0;
 	int epairsize   = 0;
@@ -289,12 +290,17 @@ int main(int argc, char **argv)
 {
 	int status = EXIT_SUCCESS;
 
-	const char *filename = "crossfire.bsp";
+	if(argc != 2) {
+		fputs("Usage: bspstudy [FILENAME]\n", stderr);
+		return EXIT_FAILURE;
+	}
+	
+	const char *filename = argv[1];
 	FILE *fp = NULL;
 	fp = fopen(filename, "rb");
 	if(fp == NULL) {
 		fprintf(stderr, "%s: failed to open file\n", filename);
-		goto bad;
+		return EXIT_FAILURE;
 	}
 
 	printf("Reading %s:\n", filename);
