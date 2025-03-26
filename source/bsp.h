@@ -2,15 +2,7 @@
 #ifndef _GOLDSRC_BSPFILE_H
 #define _GOLDSRC_BSPFILE_H
 
-/* reimplementation of valve's bspfile.h header
-   https://developer.valvesoftware.com/wiki/BSP_(GoldSrc) 
-   https://github.com/ValveSoftware/halflife/blob/master/utils/common/bsplib.h
-   figure it out buddy boyo
-*/
-
-
 #include <stdint.h>
-
 
 enum {
 	LUMP_ENTITIES     = 0,
@@ -65,16 +57,14 @@ enum bsp_maxs {
 	MAX_MAP_VISIBILITY   = 0x200000,
 	MAX_MAP_PORTALS      = 65536,
 	/* key value */
-	MAX_KEY   = 32,
-	MAX_VALUE = 1024
+	EPAIR_MAX_KEY   = 32,
+	EPAIR_MAX_VALUE = 1024
 };
-
 
 enum bsp_version {
 	BSPVERSION = 30,
 	TOOLVERSION = 2,
 };
-
 
 struct bsp_model {
 	float   mins[3];
@@ -85,7 +75,6 @@ struct bsp_model {
 	int32_t firstface;
 	int32_t numfaces;
 };
-
 
 enum bsp_plane_type {
 	PLANE_X = 0,
@@ -115,19 +104,8 @@ struct bsp_face {
 	int32_t lightmapoffset;
 };
 
-
-#define MAXTEXTURENAME 16
-#define MIPLEVELS       4
-struct bsp_miptex {
-	char name[MAXTEXTURENAME];
-	int32_t width;
-	int32_t height;
-	int32_t offsets[MIPLEVELS];
-};
-
-
 struct bsp_texinfo {
-	float vecs[2][4]; /* [s/t][xyz] */
+	float vecs[2][4]; /* [s/t][xyz offset] */
 	int32_t miptex;
 	int32_t flags;
 };
@@ -138,10 +116,27 @@ struct bsp_node {
 	int16_t children[2];
 	int16_t mins[3];
 	int16_t maxs[3];
-	uint32_t firstface;
-	uint32_t numfaces;
+	uint16_t firstface;
+	uint16_t numfaces;
 };
 
+enum bsp_contents {
+	CONTENTS_EMPTY = -1,
+	CONTENTS_SOLID = -2,
+	CONTENTS_WATER = -3,
+	CONTENTS_SLIME = -4,
+	CONTENTS_LAVA = -5,
+	CONTENTS_SKY = -6,
+	CONTENTS_ORIGIN = -7,
+	CONTENTS_CLIP = -8,
+	CONTENTS_CURRENT_0 = -9,
+	CONTENTS_CURRENT_90 = -10,
+	CONTENTS_CURRENT_180 = -11,
+	CONTENTS_CURRENT_270 = -12,
+	CONTENTS_CURRENT_UP = -13,
+	CONTENTS_CURRENT_DOWN = -14,
+	CONTENTS_TRANSLUCENT = -15
+};
 
 struct bsp_leaf {
 	int32_t contents;
@@ -169,6 +164,62 @@ struct bsp_edge {
 	uint16_t v0, v1;
 };
 
-void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t *elemcount);
+struct bsp
+{
+	union {
+		struct {
+			union {
+				char *entdata;
+				struct entity *entities;
+			};
+			struct bsp_plane *planes;
+			union {
+				uint8_t *textures;
+				struct miptexhdr *miphdr;
+			};
+			struct bsp_vertex *vertices;
+			uint8_t *vis;
+			struct bsp_node *nodes;
+			struct bsp_texinfo *texinfo;
+			struct bsp_face *faces;
+			uint8_t *lighting;
+			struct bsp_clipnode *clipnodes;
+			struct bsp_leaf *leaves;
+			uint16_t *marksurfaces;
+			struct bsp_edge *edges;
+			int32_t *surfedges;
+			struct bsp_model *models;
+		};
+		void *lumps[HEADER_LUMPS];
+	};
+
+	union {
+		struct {
+			union {
+				int32_t entdatasize;
+				int32_t numentities;
+			};
+			int32_t numplanes;
+			int32_t miptexsize;
+			int32_t numvertices;
+			int32_t vissize;
+			int32_t numnodes;
+			int32_t numtexinfos;
+			int32_t numfaces; 
+			int32_t lightingsize;
+			int32_t numclipnodes;
+			int32_t numleaves;
+			int32_t nummarksurfaces;
+			int32_t numedges;
+			int32_t numsurfedges;
+			int32_t nummodels;
+		};
+		int32_t lumpsize[HEADER_LUMPS];
+	};
+};
+
+struct bsp *bsp_open(const char *filename);
+const char *bsp_wadname(struct bsp *bsp);
+void bsp_free(struct bsp *bsp);
 
 #endif

@@ -1,9 +1,13 @@
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
-#include <goldsrc_bspfile.h>
 
-static const char *bsp_lump_name(int lump_num)
+#include "entity.h"
+#include "bsp.h"
+#include "wad.h"
+
+static const char *bsp_lumpname(int lump_num)
 {
 	switch(lump_num) {
 	case LUMP_ENTITIES:     return "LUMP_ENTITIES";
@@ -28,7 +32,7 @@ static const char *bsp_lump_name(int lump_num)
 }
 
 
-void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t *elemcount)
+static void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t *elemcount)
 {
 	static int32_t maxsizes[HEADER_LUMPS] = {
 		/* LUMP_ENTITIES     */ MAX_MAP_ENTSTRING,
@@ -73,34 +77,132 @@ void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t *elemco
 	int32_t elemsize = elemsizes[lumpid];
 
 	printf("\t%-18s{ length: %6X, offset: %6X }\n",
-		bsp_lump_name(lumpid), length, offset);
-
+	       bsp_lumpname(lumpid), length, offset); 
+	
 	if(length % elemsize != 0 || length / elemsize > maxsize) {
 		fprintf(stderr, "loadlump %s: bad length: %d\n",
-			bsp_lump_name(lumpid), length);
+			bsp_lumpname(lumpid), length);
+
 		return NULL;
 	}
 
 	if((data = malloc(length)) == NULL) {
 		fprintf(stderr, "loadlump %s: bad alloc\n",
-			bsp_lump_name(lumpid));
+			bsp_lumpname(lumpid));
 		return NULL;
 	}
 
 	if(fseek(fp, offset, SEEK_SET) != 0) {
 		fprintf(stderr, "loadlump %s: bad offset/seek %d\n",
-			bsp_lump_name(lumpid), offset);
+			bsp_lumpname(lumpid), offset);
 		free(data);
 		return NULL;
 	};
 
 	if(fread(data, 1, length, fp) != length) {
 		fprintf(stderr, "loadlump %s: bad read\n",
-			bsp_lump_name(lumpid));
+			bsp_lumpname(lumpid));
 		free(data);
 		return NULL;
 	};
 
 	*elemcount = length / elemsize;
 	return data;
+}
+
+
+void bsp_free(struct bsp *bsp)
+{
+	if(bsp == NULL) {
+		return;
+	}
+
+	for(int i = 0; i < HEADER_LUMPS; i++) {
+		if(bsp->lumps[i] != NULL) {
+			free(bsp->lumps[i]);
+		}
+	}
+
+	free(bsp);
+}
+
+
+const char *bsp_wadname(struct bsp *bsp)
+{
+	const char *wadname = NULL;
+	for(int i = 0; i < bsp->numentities; i++) {
+		const char *classname = entgets(&bsp->entities[i], "classname");
+		if(!strncmp(classname, "worldspawn", EPAIR_MAX_KEY)) {
+			wadname = entgets(&bsp->entities[i], "wad");
+		}
+	}
+
+	if(wadname == NULL) {
+		return NULL;
+	}
+
+	const char *end = wadname;
+	while(*end != '\0') {
+		end++;
+	}
+	
+	if(end[-1] != 'd' || end[-2] != 'a' || end[-3] != 'w' || end[-4] != '.') {
+		printf("WAD file does not end with a .wad file extension\n");
+	}
+
+	for(; end != wadname; end--) {
+		if(*end == '\\' || *end =='/') {
+			wadname = end + 1;
+			break;
+		}
+	}
+
+	return wadname;
+}
+
+struct bsp *bsp_open(const char *filename)
+{
+	struct bsp *bsp = NULL;
+	bsp = malloc(sizeof(struct bsp));
+
+	if(bsp == NULL) {
+		return NULL;
+	}
+	
+	memset(bsp, 0, sizeof(struct bsp));
+
+	FILE *fp = fopen(filename, "rb");
+	if(fp == NULL) {
+		goto bad;
+	}
+
+	struct bsp_header hdr;
+	fseek(fp, 0, SEEK_SET);
+	fread(&hdr, 1, sizeof(struct bsp_header), fp);
+	
+	for(int i = 0; i < HEADER_LUMPS; i++) {
+		bsp->lumps[i] = bsp_readlump(fp, &hdr, i, &bsp->lumpsize[i]);
+		if(bsp->lumps[i] == NULL) {
+			goto bad;
+		}
+	}
+
+	struct entity *entities = NULL;
+	entities = calloc(MAX_MAP_ENTITIES, sizeof(struct entity));
+
+	int32_t numentities = entparse(bsp->entdata, bsp->entdatasize, entities);
+	
+	free(bsp->entdata);
+	bsp->entities = entities;
+	bsp->numentities = numentities;
+
+	return bsp;
+bad:		
+	if(fp != NULL) {
+		fclose(fp);
+	}
+
+	bsp_free(bsp);
+
+	return NULL;
 }
