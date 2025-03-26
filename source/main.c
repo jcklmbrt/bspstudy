@@ -35,7 +35,6 @@ int main(int argc, char **argv)
 	printf("Reading %s:\n", filename);
 
 	struct bsp *bsp = bsp_open(filename);
-
 	if(bsp == NULL) {
 		goto bad;
 	}

@@ -17,20 +17,18 @@ add_executable(bspstudy
 set(CMAKE_C_STANDARD 11)
 
 set(OpenGL_GL_PREFERENCE "LEGACY")
-
-find_package(glfw3 REQUIRED)
 find_package(OpenGL REQUIRED)
 
-if(NOT DEFINED OPENGL_GLU_FOUND) 
-  message(FATAL_ERROR "GLU not found")
-endif()
+add_subdirectory("3rd_party/glfw" EXCLUDE_FROM_ALL)
+target_include_directories(bspstudy PUBLIC 3rd_party/glfw/include)
+if(WIN32)
+		target_link_libraries(bspstudy glfw opengl32 glu32)
+	else()
+		find_package(OpenGL REQUIRED)
+		target_link_libraries(bspstudy glfw OpenGL::GL OpenGL::GLU m)
+	endif()
 
 target_include_directories(bspstudy PUBLIC
   source/
   3rd_party/stb
 )
-
-target_link_directories(bspstudy PUBLIC ${OPENGL_INCLUDE_DIR} ${GLFW_INCLUDE_DIRS})
-target_link_libraries(bspstudy ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY} glfw m)
-
-
