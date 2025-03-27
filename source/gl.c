@@ -35,20 +35,25 @@ static stbtt_packedchar s_pc[128];
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
 	glViewport(0, 0, width, height);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
+	
 	s_width = width;
 	s_height = height;
-	
-	gluPerspective(90.0, (GLdouble)width / (GLdouble)height, 0.1, 10000.0);
 }
 
 static float s_origin[3];
 static float s_yaw;
 static float s_pitch;
 
-static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+enum keyflags {
+	INPUT_LEFT = (1 << 0),
+	INPUT_RIGHT = (1 << 1),
+	INPUT_UP = (1 << 2),
+	INPUT_DOWN = (1 << 3)
+};
+
+static unsigned s_keyflags = 0;
+
+void updatepos(float dt)
 {
 	float forward[3];
 	float side[3];
@@ -68,15 +73,31 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 	side[2] = 0.0f;
 
 	for(int i = 0; i < 3; i++) {
-		forward[i] *= 10.0f;
-		side[i] *= 10.0f;
+		forward[i] *= dt;
+		side[i] *= dt;
 		
-		switch(key) {
-		case GLFW_KEY_UP: case GLFW_KEY_W: s_origin[i] += forward[i]; break;
-		case GLFW_KEY_DOWN: case GLFW_KEY_S: s_origin[i] -= forward[i]; break;
-		case GLFW_KEY_LEFT: case GLFW_KEY_A: s_origin[i] -= side[i]; break;
-		case GLFW_KEY_RIGHT: case GLFW_KEY_D: s_origin[i] += side[i]; break;
-		}
+		if(s_keyflags & INPUT_UP) s_origin[i] += forward[i];
+		if(s_keyflags & INPUT_DOWN) s_origin[i] -= forward[i];
+		if(s_keyflags & INPUT_LEFT) s_origin[i] -= side[i];
+		if(s_keyflags & INPUT_RIGHT) s_origin[i] += side[i];
+	}
+}
+
+static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
+{
+	unsigned flag = 0;
+	
+	switch(key) {
+	case GLFW_KEY_UP: case GLFW_KEY_W: flag = INPUT_UP; break;
+	case GLFW_KEY_DOWN: case GLFW_KEY_S: flag =  INPUT_DOWN; break;
+	case GLFW_KEY_LEFT: case GLFW_KEY_A: flag = INPUT_LEFT; break;
+	case GLFW_KEY_RIGHT: case GLFW_KEY_D: flag = INPUT_RIGHT; break;
+	}
+
+	if(action == GLFW_PRESS) {
+		s_keyflags |= flag;
+	} else if(action == GLFW_RELEASE) {
+		s_keyflags &= ~flag;
 	}
 }
 
@@ -257,8 +278,11 @@ void gl_rface(bsp_t *bsp, GLuint *gltex, dface_t *face)
 	glEnd();
 }
 
-void gl_setupview(void)
+void gl_3dmode(void)
 {
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_TEXTURE_2D);
+	
 	float center[3];
 	center[0] = s_origin[0] + cosf(s_pitch) * cosf(s_yaw);
 	center[1] = s_origin[1] + cosf(s_pitch) * sinf(s_yaw);
@@ -272,7 +296,24 @@ void gl_setupview(void)
 		  center[0], center[1], center[2],
 		  0.0, 0.0, 1.0);
 
+	GLdouble aspect = (GLdouble)s_width / (GLdouble)s_height;
+	
 	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	gluPerspective(90.0, aspect, 0.1, 10000.0);
+}
+
+void gl_2dmode(void) {
+	
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_TEXTURE_2D);
+	
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0, s_width, s_height, 0, -1.0, 1.0);
+
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
 }
 
 void gl_lookat(const float origin[3], float pitch, float yaw)
@@ -283,7 +324,6 @@ void gl_lookat(const float origin[3], float pitch, float yaw)
 
 	s_pitch = pitch;
 	s_yaw = yaw;
-	
 }
 
 int gl_printf(float x, float y, const char *fmt, ...)
@@ -294,17 +334,7 @@ int gl_printf(float x, float y, const char *fmt, ...)
 	int len = vsnprintf(buf, 2048, fmt, args);
 	va_end(args);
 
-	glDisable(GL_DEPTH_TEST);
-
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-	glOrtho(0, s_width, s_height, 0, -1.0, 1.0);
-
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
-		
+	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, s_glfont);
 
 	glBegin(GL_QUADS);
@@ -317,13 +347,7 @@ int gl_printf(float x, float y, const char *fmt, ...)
 		glTexCoord2f(q.s0, q.t1); glVertex2f(q.x0, q.y1);
 	}
 	glEnd();
-
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
-
-	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_TEXTURE_2D);
 
 	return len;
 }

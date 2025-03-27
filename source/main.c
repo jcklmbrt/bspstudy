@@ -14,6 +14,7 @@
 #define RAD2DEG(x) (x * (180.0 / M_PI))
 #define DEG2RAD(x) (x * ( M_PI / 180.0))
 
+void updatepos(float dt);
 
 int main(int argc, char **argv)
 {
@@ -127,16 +128,18 @@ int main(int argc, char **argv)
 	for(;;) {
 		dt = gl_time() - time;
 		time = gl_time();
+		updatepos(dt*100.0f);
 		
 		gl_clear(0.0f, 0.0f, 0.0f, 1.0f);
-		gl_setupview();
-
+		
+		gl_3dmode();
 		gl_rmodel(bsp, gltex, 0);
 		
 		for(int32_t i = 0; i < nummodels; i++) {
 			gl_rmodel(bsp, gltex, brushmodels[i]);
 		}
 
+		gl_2dmode();
 		gl_printf(24.0f, 24.0f, "%.0lf Frames Per Second", 1.0f / dt, filename);
 		gl_printf(24.0f, 48.0f, "BSP File: %s", filename);
 		gl_printf(24.0f, 72.0f, "WAD File: %s", wadname);

@@ -17,7 +17,9 @@ int gl_init(void);
 void gl_free(void);
 double gl_time(void);
 
-void gl_setupview(void);
+void gl_2dmode(void);
+void gl_3dmode(void);
+
 void gl_lookat(const float origin[3], float pitch, float yaw);
 void gl_rface(bsp_t *bsp, GLuint *gltex, dface_t *face);
 void gl_rmodel(bsp_t *bsp, GLuint *gltex, int32_t index);
