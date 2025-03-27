@@ -122,7 +122,7 @@ int gl_shouldclose(void)
 }
 
 
-GLuint gl_loadmiptex(struct miptex *miptex)
+GLuint gl_loadmiptex(miptex_t *miptex)
 {
 	uint8_t *miptex_p = (uint8_t *)miptex;
 	int32_t width = miptex->width;
@@ -158,7 +158,7 @@ GLuint gl_loadmiptex(struct miptex *miptex)
 }
 
 
-void gl_rmodel(struct bsp *bsp, GLuint *gltex, int32_t index)
+void gl_rmodel(bsp_t *bsp, GLuint *gltex, int32_t index)
 {
 	if(index < 0 || index > bsp->nummodels) {
 		fprintf(stderr, "gl_rmodel: model index %d out of bounds (0-%d)",
@@ -166,7 +166,7 @@ void gl_rmodel(struct bsp *bsp, GLuint *gltex, int32_t index)
 		return;
 	}
 	
-	struct bsp_model *mdl = &bsp->models[index];
+	dmodel_t *mdl = &bsp->models[index];
 	
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
@@ -183,15 +183,15 @@ void gl_rmodel(struct bsp *bsp, GLuint *gltex, int32_t index)
 		int16_t child = children[--nc];
 
 		if(child < 0) {
-			struct bsp_leaf *leaf = &bsp->leaves[~child];
+			dleaf_t *leaf = &bsp->leaves[~child];
 			
 			for(int32_t j = 0; j < leaf->nummarksurfaces; j++) {
 				int32_t face = bsp->marksurfaces[leaf->firstmarksurface + j];
 				gl_rface(bsp, gltex, &bsp->faces[face]);
 			}
 		} else {
-			struct bsp_node *node = &bsp->nodes[child];
-			struct bsp_plane *plane = &bsp->planes[node->plane];
+			dnode_t *node = &bsp->nodes[child];
+			dplane_t *plane = &bsp->planes[node->plane];
 
 			float dist;
 			switch(plane->type) {
@@ -216,12 +216,19 @@ void gl_rmodel(struct bsp *bsp, GLuint *gltex, int32_t index)
 	glPopMatrix();
 }
 
-void gl_rface(struct bsp *bsp, GLuint *gltex, struct bsp_face *face)
+float v3dot(const float a[3], const float b[3])
 {
-	struct bsp_texinfo *texinfo = &bsp->texinfo[face->texinfo];
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+	
+
+void gl_rface(bsp_t *bsp, GLuint *gltex, dface_t *face)
+{
+	texinfo_t *texinfo = &bsp->texinfo[face->texinfo];
 	glBindTexture(GL_TEXTURE_2D, gltex[texinfo->miptex]);
 
-	struct miptex *miptex = bsp->textures + bsp->miphdr->dataofs[texinfo->miptex];
+	int32_t mipofs = bsp->miphdr->dataofs[texinfo->miptex];
+	miptex_t *miptex = (miptex_t *)(bsp->textures + mipofs);
 	
 	glBegin(GL_POLYGON);
 	
@@ -231,26 +238,21 @@ void gl_rface(struct bsp *bsp, GLuint *gltex, struct bsp_face *face)
 
 		int32_t v;
 		if(edge >= 0) {
-			v = bsp->edges[edge].v0;
+			v = bsp->edges[edge].v[0];
 		} else {
-			v = bsp->edges[-edge].v1;
+			v = bsp->edges[-edge].v[1];
 		}
 
-		struct bsp_vertex vtx = bsp->vertices[v];
+		dvertex_t vtx = bsp->vertices[v];
 		
-		float s = vtx.x * texinfo->vecs[0][0] +
-			vtx.y * texinfo->vecs[0][1] +
-			vtx.z * texinfo->vecs[0][2] + texinfo->vecs[0][3];
-
-		float t = vtx.x * texinfo->vecs[1][0] +
-			vtx.y * texinfo->vecs[1][1] +
-			vtx.z * texinfo->vecs[1][2] + texinfo->vecs[1][3];
+		float s = v3dot(vtx.point, texinfo->vecs[0]) + texinfo->vecs[0][3];
+		float t = v3dot(vtx.point, texinfo->vecs[1]) + texinfo->vecs[1][3];
 
 		s /= (float)miptex->width;
 		t /= (float)miptex->height;
 		
 		glTexCoord2f(s, t);
-		glVertex3d(vtx.x, vtx.y, vtx.z);
+		glVertex3fv(vtx.point);
 	}
 	glEnd();
 }

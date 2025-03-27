@@ -2,6 +2,7 @@
 #ifndef _GOLDSRC_BSPFILE_H
 #define _GOLDSRC_BSPFILE_H
 
+#include "wad.h"
 #include <stdint.h>
 
 enum {
@@ -23,19 +24,19 @@ enum {
 	HEADER_LUMPS      = 15
 };
 
-struct bsp_lump {
+typedef struct {
 	int32_t offset;
 	int32_t length;
-};
+} lump_t;
 
 
-struct bsp_header {
-	int32_t         version;
-	struct bsp_lump lump[HEADER_LUMPS];
-};
+typedef struct {
+	int32_t version;
+	lump_t lump[HEADER_LUMPS];
+} dheader_t;
 
 
-enum bsp_maxs {
+enum {
 	MAX_MAP_HULLS        = 4,
 	MAX_MAP_MODELS       = 400,
 	MAX_MAP_BRUSHES      = 4096,
@@ -58,25 +59,25 @@ enum bsp_maxs {
 	MAX_MAP_PORTALS      = 65536,
 	/* key value */
 	EPAIR_MAX_KEY   = 32,
-	EPAIR_MAX_VALUE = 1024
-};
-
-enum bsp_version {
+	EPAIR_MAX_VALUE = 1024,
+	/* versions */
 	BSPVERSION = 30,
-	TOOLVERSION = 2,
+	TOOLVERSION = 2
 };
 
-struct bsp_model {
-	float   mins[3];
-	float   maxs[3];
-	float   origin[3];
+
+typedef struct {
+	float mins[3];
+	float maxs[3];
+	float origin[3];
 	int32_t headnode[MAX_MAP_HULLS];
 	int32_t visleafs;
 	int32_t firstface;
 	int32_t numfaces;
-};
+} dmodel_t;
 
-enum bsp_plane_type {
+
+enum {
 	PLANE_X = 0,
 	PLANE_Y = 1,
 	PLANE_Z = 2,
@@ -86,41 +87,42 @@ enum bsp_plane_type {
 };
 
 
-struct bsp_plane {
-	float   normal[3];
-	float   dist;
+typedef struct {
+	float normal[3];
+	float dist;
 	int32_t type;
-};
+} dplane_t;
+
 
 /* signed/unsigned ambiguity in documentation :/ */
 #define MAXLIGHTMAPS 4
-struct bsp_face {
+typedef struct {
 	int16_t plane;
 	int16_t side;
 	int32_t firstedge;
 	int16_t numedges;
 	int16_t texinfo;
-	char    styles[MAXLIGHTMAPS];
+	char styles[MAXLIGHTMAPS];
 	int32_t lightmapoffset;
-};
+} dface_t;
 
-struct bsp_texinfo {
+
+typedef struct texinfo_s {
 	float vecs[2][4]; /* [s/t][xyz offset] */
 	int32_t miptex;
 	int32_t flags;
-};
+} texinfo_t;
 
-
-struct bsp_node {
+typedef struct {
 	uint32_t plane;
 	int16_t children[2];
 	int16_t mins[3];
 	int16_t maxs[3];
 	uint16_t firstface;
 	uint16_t numfaces;
-};
+} dnode_t;
 
-enum bsp_contents {
+enum {
 	CONTENTS_EMPTY = -1,
 	CONTENTS_SOLID = -2,
 	CONTENTS_WATER = -3,
@@ -138,7 +140,7 @@ enum bsp_contents {
 	CONTENTS_TRANSLUCENT = -15
 };
 
-struct bsp_leaf {
+typedef struct {
 	int32_t contents;
 	int32_t vis;
 	int16_t mins[3];
@@ -146,25 +148,22 @@ struct bsp_leaf {
 	uint16_t firstmarksurface;
 	uint16_t nummarksurfaces;
 	uint8_t ambientlevels[4];
-};
+} dleaf_t;
 
-
-struct bsp_clipnode {
+typedef struct {
 	int32_t plane;
 	int16_t children[2];
-};
+} dclipnode_t;
 
-struct bsp_vertex {
-	float x;
-	float y;
-	float z;
-};
+typedef struct bsp_vertex {
+	float point[3];
+} dvertex_t;
 
-struct bsp_edge {
-	uint16_t v0, v1;
-};
+typedef struct {
+	uint16_t v[2];
+} dedge_t;
 
-struct bsp
+typedef struct
 {
 	union {
 		struct {
@@ -172,23 +171,23 @@ struct bsp
 				char *entdata;
 				struct entity *entities;
 			};
-			struct bsp_plane *planes;
+			dplane_t *planes;
 			union {
 				uint8_t *textures;
-				struct miptexhdr *miphdr;
+				dmiptexlump_t *miphdr;
 			};
-			struct bsp_vertex *vertices;
+			dvertex_t *vertices;
 			uint8_t *vis;
-			struct bsp_node *nodes;
-			struct bsp_texinfo *texinfo;
-			struct bsp_face *faces;
+			dnode_t *nodes;
+			texinfo_t *texinfo;
+			dface_t *faces;
 			uint8_t *lighting;
-			struct bsp_clipnode *clipnodes;
-			struct bsp_leaf *leaves;
+			dclipnode_t *clipnodes;
+			dleaf_t *leaves;
 			uint16_t *marksurfaces;
-			struct bsp_edge *edges;
+			dedge_t *edges;
 			int32_t *surfedges;
-			struct bsp_model *models;
+			dmodel_t *models;
 		};
 		void *lumps[HEADER_LUMPS];
 	};
@@ -216,10 +215,10 @@ struct bsp
 		};
 		int32_t lumpsize[HEADER_LUMPS];
 	};
-};
+} bsp_t;
 
-struct bsp *bsp_open(const char *filename);
-const char *bsp_wadname(struct bsp *bsp);
-void bsp_free(struct bsp *bsp);
+bsp_t *bsp_open(const char *filename);
+const char *bsp_wadname(bsp_t *bsp);
+void bsp_free(bsp_t *bsp);
 
 #endif

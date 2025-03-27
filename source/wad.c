@@ -4,47 +4,41 @@
 
 #include "wad.h"
 
-struct wad {
-	FILE *fp;
-	struct wad_dir *dirs;
-	int32_t num_dirs;
-};
-
-struct wad *wad_open(const char *filename)
+wad_t *wad_open(const char *filename)
 {
-	struct wad *wad = malloc(sizeof(struct wad));
+	wad_t *wad = malloc(sizeof(wad_t));
 	
 	if(wad == NULL) {
 		goto bad;
 	}
 
-	memset(wad, 0, sizeof(struct wad));
+	memset(wad, 0, sizeof(wad_t));
 
 	wad->fp = fopen(filename, "rb");
 	if(wad->fp == NULL) {
 		goto bad;
 	}
 
-	struct wad_hdr hdr;
+	wadinfo_t hdr;
 	fseek(wad->fp, 0, SEEK_SET);
-	fread(&hdr, 1, sizeof(struct wad_hdr), wad->fp);
+	fread(&hdr, 1, sizeof(wadinfo_t), wad->fp);
 
-	if(hdr.id[0] != 'W' || hdr.id[1] != 'A' ||
-	   hdr.id[2] != 'D' || (hdr.id[3] != '2' && hdr.id[3] != '3')) {
+	if(hdr.identification[0] != 'W' || hdr.identification[1] != 'A' ||
+	   hdr.identification[2] != 'D' || (hdr.identification[3] != '2' && hdr.identification[3] != '3')) {
 		fprintf(stderr, "wad_open: %s bad magic (%c%c%c%c)\n",
-			filename, hdr.id[0], hdr.id[1], hdr.id[2], hdr.id[3]);
+			filename, hdr.identification[0], hdr.identification[1], hdr.identification[2], hdr.identification[3]);
 		goto bad;
 	}
 
-	wad->num_dirs = hdr.numlumps;
+	wad->numdirs = hdr.numlumps;
 	
-	wad->dirs = malloc(sizeof(struct wad_dir) * wad->num_dirs);
+	wad->dirs = malloc(sizeof(lumpinfo_t) * wad->numdirs);
 	if(wad->dirs == NULL) {
 		goto bad;
 	}
 
-	fseek(wad->fp, hdr.info_ofs, SEEK_SET);
-	fread(wad->dirs, 1, sizeof(struct wad_dir) * wad->num_dirs, wad->fp);
+	fseek(wad->fp, hdr.infotableofs, SEEK_SET);
+	fread(wad->dirs, 1, sizeof(lumpinfo_t) * wad->numdirs, wad->fp);
 	
 	return wad;
 bad:
@@ -52,10 +46,10 @@ bad:
 	return NULL;
 }
 
-struct miptex *wad_getmiptex(struct wad *wad, const char *name)
+miptex_t *wad_getmiptex(wad_t *wad, const char *name)
 {
-	struct wad_dir *dir = NULL;
-	for(int32_t i = 0; i < wad->num_dirs; i++) {
+	lumpinfo_t *dir = NULL;
+	for(int32_t i = 0; i < wad->numdirs; i++) {
 		if(!strncmp(name, wad->dirs[i].name, MAXTEXTURENAME)) {
 			dir = &wad->dirs[i];
 			break;
@@ -77,7 +71,7 @@ struct miptex *wad_getmiptex(struct wad *wad, const char *name)
 		return NULL;
 	}
 
-	struct miptex *mt = malloc(dir->size);
+	miptex_t *mt = malloc(dir->size);
 	if(mt == NULL) {
 		return NULL;
 	}
@@ -95,7 +89,7 @@ struct miptex *wad_getmiptex(struct wad *wad, const char *name)
 	return mt;
 }
 
-void wad_close(struct wad *wad)
+void wad_close(wad_t *wad)
 {
 	if(wad != NULL) {
 		if(wad->fp != NULL) {

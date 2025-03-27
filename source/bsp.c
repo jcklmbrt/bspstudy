@@ -32,7 +32,7 @@ static const char *bsp_lumpname(int lump_num)
 }
 
 
-static void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t *elemcount)
+static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcount)
 {
 	static int32_t maxsizes[HEADER_LUMPS] = {
 		/* LUMP_ENTITIES     */ MAX_MAP_ENTSTRING,
@@ -54,20 +54,20 @@ static void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t 
 
 	static int32_t elemsizes[HEADER_LUMPS] = {
 		/* LUMP_ENTITIES     */ sizeof(char), /* BYTE ARRAY */
-		/* LUMP_PLANES       */ sizeof(struct bsp_plane),
+		/* LUMP_PLANES       */ sizeof(dplane_t),
 		/* LUMP_TEXTURES     */ sizeof(char), /* BYTE ARRAY */
-		/* LUMP_VERTICES     */ sizeof(struct bsp_vertex),
+		/* LUMP_VERTICES     */ sizeof(dvertex_t),
 		/* LUMP_VISIBILITY   */ sizeof(char), /* BYTE ARRAY */
-		/* LUMP_NODES        */ sizeof(struct bsp_node),
-		/* LUMP_TEXINFO      */ sizeof(struct bsp_texinfo),
-		/* LUMP_FACES        */ sizeof(struct bsp_face),
+		/* LUMP_NODES        */ sizeof(dnode_t),
+		/* LUMP_TEXINFO      */ sizeof(texinfo_t),
+		/* LUMP_FACES        */ sizeof(dface_t),
 		/* LUMP_LIGHTING     */ sizeof(char), /* BYTE ARRAY */
-		/* LUMP_CLIPNODES    */ sizeof(struct bsp_clipnode),
-		/* LUMP_LEAVES       */ sizeof(struct bsp_leaf),
+		/* LUMP_CLIPNODES    */ sizeof(dclipnode_t),
+		/* LUMP_LEAVES       */ sizeof(dleaf_t),
 		/* LUMP_MARKSURFACES */ sizeof(uint16_t),
-		/* LUMP_EDGES        */ sizeof(struct bsp_edge),
+		/* LUMP_EDGES        */ sizeof(dedge_t),
 		/* LUMP_SURFEDGES    */ sizeof(int32_t),
-		/* LUMP_MODELS       */ sizeof(struct bsp_model)
+		/* LUMP_MODELS       */ sizeof(dmodel_t)
 	};
 
 	void *data = NULL;
@@ -111,7 +111,7 @@ static void *bsp_readlump(FILE *fp, struct bsp_header *hdr, int lumpid, int32_t 
 }
 
 
-void bsp_free(struct bsp *bsp)
+void bsp_free(bsp_t *bsp)
 {
 	if(bsp == NULL) {
 		return;
@@ -127,7 +127,7 @@ void bsp_free(struct bsp *bsp)
 }
 
 
-const char *bsp_wadname(struct bsp *bsp)
+const char *bsp_wadname(bsp_t *bsp)
 {
 	const char *wadname = NULL;
 	for(int i = 0; i < bsp->numentities; i++) {
@@ -160,25 +160,25 @@ const char *bsp_wadname(struct bsp *bsp)
 	return wadname;
 }
 
-struct bsp *bsp_open(const char *filename)
+bsp_t *bsp_open(const char *filename)
 {
-	struct bsp *bsp = NULL;
-	bsp = malloc(sizeof(struct bsp));
+	bsp_t *bsp = NULL;
+	bsp = malloc(sizeof(bsp_t));
 
 	if(bsp == NULL) {
 		return NULL;
 	}
 	
-	memset(bsp, 0, sizeof(struct bsp));
+	memset(bsp, 0, sizeof(bsp_t));
 
 	FILE *fp = fopen(filename, "rb");
 	if(fp == NULL) {
 		goto bad;
 	}
 
-	struct bsp_header hdr;
+	dheader_t hdr;
 	fseek(fp, 0, SEEK_SET);
-	fread(&hdr, 1, sizeof(struct bsp_header), fp);
+	fread(&hdr, 1, sizeof(dheader_t), fp);
 	
 	for(int i = 0; i < HEADER_LUMPS; i++) {
 		bsp->lumps[i] = bsp_readlump(fp, &hdr, i, &bsp->lumpsize[i]);

@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 
 	printf("Reading %s:\n", filename);
 
-	struct bsp *bsp = bsp_open(filename);
+	bsp_t *bsp = bsp_open(filename);
 	if(bsp == NULL) {
 		goto bad;
 	}
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 
 	printf("WAD File: %s\n", wadname);
 
-	struct wad *wad = NULL;
+	wad_t *wad = NULL;
 	wad = wad_open(wadname);
 	if(wad == NULL) {
 		fprintf(stderr, "Failed to open wad file %s\n", wadname);
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 			continue;
 		}
 
-		struct miptex *miptex = (struct miptex *)(bsp->textures + bsp->miphdr->dataofs[i]);
+		miptex_t *miptex = (miptex_t *)(bsp->textures + bsp->miphdr->dataofs[i]);
 
 		if(miptex->offsets[0] != 0) {
 			/* texture is in BSP file */
