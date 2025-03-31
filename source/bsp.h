@@ -2,8 +2,10 @@
 #ifndef _GOLDSRC_BSPFILE_H
 #define _GOLDSRC_BSPFILE_H
 
-#include "wad.h"
 #include <stdint.h>
+
+#include "wad.h"
+#include "entity.h"
 
 enum {
 	LUMP_ENTITIES     = 0,
@@ -102,7 +104,7 @@ typedef struct {
 	int32_t firstedge;
 	int16_t numedges;
 	int16_t texinfo;
-	char styles[MAXLIGHTMAPS];
+	uint8_t styles[MAXLIGHTMAPS];
 	int32_t lightmapoffset;
 } dface_t;
 
@@ -169,7 +171,7 @@ typedef struct
 		struct {
 			union {
 				char *entdata;
-				struct entity *entities;
+				entity_t *entities;
 			};
 			dplane_t *planes;
 			union {
@@ -218,7 +220,9 @@ typedef struct
 } bsp_t;
 
 bsp_t *bsp_open(const char *filename);
-const char *bsp_wadname(bsp_t *bsp);
+const char *bsp_wadname(const bsp_t *bsp);
 void bsp_free(bsp_t *bsp);
+void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *pvs);
+
 
 #endif

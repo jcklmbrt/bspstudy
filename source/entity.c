@@ -12,7 +12,7 @@ static char *getval(char *ep)  { return ep + 3 + getkeylen(ep); }
 static char *getnext(char *ep) { return getval(ep) + getvallen(ep); }
 
 
-const char *entputs(struct entity *e)
+const char *entputs(const entity_t *e)
 {
 	const char *classname = NULL;
 	static char lines[EPAIR_MAX_VALUE][128];
@@ -35,7 +35,7 @@ const char *entputs(struct entity *e)
 }
 
 
-const char *entgets(struct entity *e, const char *key)
+const char *entgets(const entity_t *e, const char *key)
 {
 	for(char *ep = e->epairs; ep - e->epairs < e->size; ep = getnext(ep)) {
 		if(!strncmp(getkey(ep), key, getkeylen(ep))) {
@@ -46,7 +46,7 @@ const char *entgets(struct entity *e, const char *key)
 }
 
 
-const char *entgetf(struct entity *e, const char *key, float *out)
+const char *entgetf(const entity_t *e, const char *key, float *out)
 {
 	const char *value = entgets(e, key);
 	if(value != NULL) {
@@ -56,7 +56,7 @@ const char *entgetf(struct entity *e, const char *key, float *out)
 }
 
 
-const char *entgetv3(struct entity *e, const char *key, float out[3])
+const char *entgetv3(const entity_t *e, const char *key, float out[3])
 {
 	const char *value = entgets(e, key);
 	if(value != NULL) {
@@ -77,7 +77,7 @@ enum tokid {
 };
 
 
-const int elex(const char **p_start, const char *end, char token[EPAIR_MAX_VALUE])
+static int elex(const char **p_start, const char *end, char token[EPAIR_MAX_VALUE])
 {
 	const char *start = *p_start;
 	char       *ptok  = token;
@@ -135,8 +135,7 @@ const int elex(const char **p_start, const char *end, char token[EPAIR_MAX_VALUE
 }
 
 
-int entparse(const char *entdata, int32_t entdatasize, 
-                 struct entity *entities)
+int entparse(const char *entdata, int32_t entdatasize, entity_t *entities)
 {
 	/* based upon the sample bsp file's entity data,
 	   let's construct a formal grammar.
@@ -154,7 +153,6 @@ int entparse(const char *entdata, int32_t entdatasize,
 	/* {\s(".*" ".*"\s)+} */
 	char token[EPAIR_MAX_VALUE];
 	const char *end = entdata + entdatasize;
-	size_t toklen   = 0;
 	int numentities = 0;
 	int epairsize   = 0;
 	int old_epairsize;

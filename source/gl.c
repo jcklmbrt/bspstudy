@@ -1,185 +1,320 @@
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#endif
-
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include <GLFW/glfw3.h>
-
-#include <stdarg.h>
+#include <string.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#define _USE_MATH_DEFINES
-#include <math.h>
+#include "v_math.h"
 
+#include "lightmap.h"
 #include "bsp.h"
 #include "wad.h"
 #include "gl.h"
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include <stb_truetype.h>
+#define STB_RECT_PACK_IMPLEMENTATION
+#include <stb_rect_pack.h>
+#include <GLFW/glfw3.h>
 
-static GLFWwindow *s_window;
-static int s_width = 640;
-static int s_height = 480;
+typedef struct {
+	float x, y, z;
+	float s, t;
+	float ls, lt; // lightmap coords
+} glvertex_t;
 
-#define FONTATLAS_WIDTH 512
-#define FONTATLAS_HEIGHT 512
-static GLuint s_glfont = 0;
-static stbtt_packedchar s_pc[128];
-
-static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
+static void setvertex(glvertex_t *vtx, float x, float y, float z, float s, float t, float ls, float lt)
 {
-	glViewport(0, 0, width, height);
+	vtx->x = x;
+	vtx->y = y;
+	vtx->z = z;
+	vtx->s = s;
+	vtx->t = t;
+	vtx->ls = ls;
+	vtx->lt = lt;
+}
+
+typedef struct {
+	// gl objects
+	GLuint shader;
+	GLuint vbo;
+	GLuint ibo;
+	GLuint vao;
+
+	// uniforms
+	GLint u_mvp;
+
+	// starting vertex for each face
+	int32_t *vtxlookup;
+
+	// a bitset for each of our textures
+	// dimensions [numtextures][numfaces]
+	uint8_t *texturebits;
+
+	// buffers
+	glvertex_t *vtx;
+	int32_t nv;
 	
-	s_width = width;
-	s_height = height;
-}
+	GLuint *idx;
+	int32_t ni;
 
-static float s_origin[3];
-static float s_yaw;
-static float s_pitch;
+	// matrices
+	float model[4][4];
+	float proj[4][4];
+	float view[4][4];
 
-enum keyflags {
-	INPUT_LEFT = (1 << 0),
-	INPUT_RIGHT = (1 << 1),
-	INPUT_UP = (1 << 2),
-	INPUT_DOWN = (1 << 3)
-};
+	// 2d matrix
+	float ortho[4][4];
+} gl_t;
 
-static unsigned s_keyflags = 0;
+static gl_t s_gl;
 
-void updatepos(float dt)
+
+static void miptexrgba(const miptex_t *mt, uint8_t *rgba)
 {
-	float forward[3];
-	float side[3];
-
-	float cp = cosf(s_pitch);
-	float sp = sinf(s_pitch);
-	float cy = cosf(s_yaw);
-	float sy = sinf(s_yaw);
-	float sr = sinf(0.0f);
-	float cr = cosf(0.0f);
+	uint8_t *miptex_p = (uint8_t *)mt;
+	int32_t width = mt->width;
+	int32_t height = mt->height;
 	
-	forward[0] = cp*cy;
-	forward[1] = cp*sy;
-	forward[2] = -sp;
-	side[0] = sy;
-	side[1] = -cy;
-	side[2] = 0.0f;
-
-	for(int i = 0; i < 3; i++) {
-		forward[i] *= dt;
-		side[i] *= dt;
-		
-		if(s_keyflags & INPUT_UP) s_origin[i] += forward[i];
-		if(s_keyflags & INPUT_DOWN) s_origin[i] -= forward[i];
-		if(s_keyflags & INPUT_LEFT) s_origin[i] -= side[i];
-		if(s_keyflags & INPUT_RIGHT) s_origin[i] += side[i];
-	}
-}
-
-static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
-{
-	unsigned flag = 0;
+	uint8_t *palette = miptex_p + mt->offsets[3] + (width / 8) * (height / 8) + 2;
+	uint8_t *mip = miptex_p + mt->offsets[0];
 	
-	switch(key) {
-	case GLFW_KEY_UP: case GLFW_KEY_W: flag = INPUT_UP; break;
-	case GLFW_KEY_DOWN: case GLFW_KEY_S: flag =  INPUT_DOWN; break;
-	case GLFW_KEY_LEFT: case GLFW_KEY_A: flag = INPUT_LEFT; break;
-	case GLFW_KEY_RIGHT: case GLFW_KEY_D: flag = INPUT_RIGHT; break;
-	}
-
-	if(action == GLFW_PRESS) {
-		s_keyflags |= flag;
-	} else if(action == GLFW_RELEASE) {
-		s_keyflags &= ~flag;
-	}
-}
-
-static void mouse_callback(GLFWwindow *window, double x, double y)
-{
-	static float last_x = 0.0f;
-	static float last_y = 0.0f;
-	
-	float xoffset = last_x - x;
-	float yoffset = y - last_y;
-	last_x = x;
-	last_y = y;
-
-	const float sensitivity = 0.01f;
-	xoffset *= sensitivity;
-	yoffset *= sensitivity;
-
-	s_yaw += xoffset;
-	s_pitch += yoffset;
-
-	const float min_pitch = -M_PI_2 * 0.99f;
-	const float max_pitch =  M_PI_2 * 0.99f;
-	
-	s_pitch = s_pitch > max_pitch ? max_pitch : s_pitch;
-	s_pitch = s_pitch < min_pitch ? min_pitch : s_pitch; 
-
-	s_yaw = remainderf(s_yaw, M_PI * 2.0);
-}
-
-void gl_swapbuffers(void)
-{
-	glfwSwapBuffers(s_window);
-}
-
-void gl_pollevents(void)
-{
-	glfwPollEvents();
-}
-
-int gl_shouldclose(void)
-{
-	return glfwWindowShouldClose(s_window);
-}
-
-
-GLuint gl_loadmiptex(miptex_t *miptex)
-{
-	uint8_t *miptex_p = (uint8_t *)miptex;
-	int32_t width = miptex->width;
-	int32_t height = miptex->height;
-	
-	uint8_t *palette = miptex_p + miptex->offsets[3] + (width / 8) * (height / 8) + 2;
-	uint8_t *mip0 = miptex_p + miptex->offsets[0];
-
-	uint8_t *rgba = malloc(width * height * 4);
 	for(int i = 0; i < height * width; i++) {
-		int32_t p = mip0[i] * 3;
+		int32_t p = mip[i] * 3;
 		rgba[i * 4 + 0] = palette[p + 0];
 		rgba[i * 4 + 1] = palette[p + 1];
 		rgba[i * 4 + 2] = palette[p + 2];
 		// https://developer.valvesoftware.com/wiki/Texture_prefixes
-		if(mip0[i] == 255 && miptex->name[0] == '{') {
-			rgba[i * 4 + 3] = 0x00;
+		if(mip[i] == 255 && mt->name[0] == '{') {
+			for(int j = 0; j < 4; j++) {
+				rgba[i * 4 + j] = 0x0;
+			}
 		} else {
 			rgba[i * 4 + 3] = 0xFF;
 		}
 	}
-
-	GLuint tex;
-	glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	free(rgba);
-
-	return tex;
 }
 
 
-void gl_rmodel(bsp_t *bsp, GLuint *gltex, int32_t index)
+bool m4mulv3(float m[4][4], const float in[3], float out[3])
+{
+	float x = in[0] * m[0][0] + in[1] * m[1][0] + in[2] * m[2][0] + m[3][0];
+	float y = in[0] * m[0][1] + in[1] * m[1][1] + in[2] * m[2][1] + m[3][1];
+	float z = in[0] * m[0][2] + in[1] * m[1][2] + in[2] * m[2][2] + m[3][2];
+	float w = in[0] * m[0][3] + in[1] * m[1][3] + in[2] * m[2][3] + m[3][3];
+	
+	if(w < 0.001f) {
+		return false;
+	}
+
+	out[0] = x / w;
+	out[1] = y / w;
+	out[2] = z / w;
+
+	return true;
+}
+
+
+bool gl_world2screen(const float world[3], float w, float h, float *x, float *y)
+{
+	float screen[3];
+	float mvp[4][4];
+	m4mult(s_gl.proj, s_gl.view, mvp);
+
+	if(!m4mulv3(mvp, world, screen)) {
+		return false;
+	}
+
+	*x = (screen[0] + 1.0f) * (0.5f * w);
+	*y = (screen[1] + 1.0f) * (0.5f * h);
+	*y = h - *y;
+
+	return true;
+}
+
+
+GLuint *gl_loadtextures(const bsp_t *bsp)
+{
+	GLuint *textures = NULL;
+	uint8_t *rgba = NULL;
+	
+	const char *wadname = bsp_wadname(bsp);
+	
+	wad_t *wad = NULL;
+	wad = wad_open(wadname);
+	if(wad == NULL) {
+		fprintf(stderr, "Failed to open wad file %s\n", wadname);
+		wad = wad_open("halflife.wad");
+		if(wad == NULL) {
+			goto bad;
+		}
+	}
+
+	textures = calloc(bsp->miphdr->nummiptex, sizeof(GLuint));
+	if(textures == NULL) {
+		goto bad;
+	}
+
+	glActiveTexture(GL_TEXTURE0);
+	glGenTextures(bsp->miphdr->nummiptex, textures);
+
+	int32_t maxdim = 0;
+
+	for(int32_t i = 0; i < bsp->miphdr->nummiptex; i++) {
+		if(bsp->miphdr->dataofs[i] == 0 || bsp->miphdr->dataofs[i] == -1) {
+			continue;
+		}
+
+		miptex_t *miptex = (miptex_t *)(bsp->textures + bsp->miphdr->dataofs[i]);
+
+		int32_t dim = miptex->width * miptex->height;
+		
+		if(miptex->offsets[0] == 0) {
+			miptex = wad_getmiptex(wad, miptex->name);
+			if(miptex != NULL) {
+				dim = miptex->width * miptex->height;
+			}
+		}
+
+		if(maxdim < dim) {
+			maxdim = dim;
+		}
+	}
+	
+	rgba = malloc(maxdim * 4);
+	if(rgba == NULL) {
+		goto bad;
+	}
+	
+	for(int32_t i = 0; i < bsp->miphdr->nummiptex; i++) {
+		if(bsp->miphdr->dataofs[i] == 0 || bsp->miphdr->dataofs[i] == -1) {
+			continue;
+		}
+
+		miptex_t *miptex = (miptex_t *)(bsp->textures + bsp->miphdr->dataofs[i]);
+
+		if(miptex->offsets[0] == 0) {
+			// texture is stored in WAD file
+			const char *name = miptex->name;
+			miptex = wad_getmiptex(wad, name);
+			if(miptex == NULL) {
+				fprintf(stderr, "%s: failed to find texture %s\n", wadname, name);
+				miptex = wad_getmiptex(wad, "aaatrigger");
+				if(miptex == NULL) {
+					continue;
+				}
+			}
+		}
+
+		miptexrgba(miptex, rgba);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textures[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, miptex->width, miptex->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+	}
+	
+	wad_close(wad);
+
+	return textures;
+bad:
+	wad_close(wad);
+	free(textures);
+	free(rgba);
+	return NULL;
+}
+
+bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
+{
+	// count unique vertices.
+	// let's assume that a single dvertex_t can belong to different faces and have different texcoords
+	// this makes sense looking at the output of this loop numvertices will be much larger than bsp->numvertices
+	int32_t numvertices = 0;
+	for(int32_t i = 0; i < bsp->numfaces; i++) {
+		dface_t *face = &bsp->faces[i];
+		numvertices += face->numedges;
+	}
+
+	// then we want to group together our vertices such that the vertices of a face will be continguous
+	glvertex_t *vertices = calloc(numvertices, sizeof(glvertex_t));
+
+	// start index into vertices array for each face, size will just be face->numedges
+	// we must trianglulate these vertices ourselves, it's not rocket science.
+	int32_t *vtxlookup = calloc(bsp->numfaces, sizeof(int32_t));
+	s_gl.vtxlookup = vtxlookup;
+
+	int32_t nv = 0;
+
+	// let's populate these arrays
+	for(int32_t f = 0; f < bsp->numfaces; f++) {
+		dface_t *face = &bsp->faces[f];
+		texinfo_t *texinfo = &bsp->texinfo[face->texinfo];
+		int32_t mipofs = bsp->miphdr->dataofs[texinfo->miptex];
+		miptex_t *miptex = (miptex_t *)(bsp->textures + mipofs);
+
+		vtxlookup[f] = nv; 
+
+		for(int32_t i = 0; i < face->numedges; i++) {
+		
+			int32_t edge = bsp->surfedges[face->firstedge + i];
+
+			int32_t v;
+			if(edge >= 0) {
+				v = bsp->edges[edge].v[0];
+			} else {
+				v = bsp->edges[-edge].v[1];
+			}
+
+			dvertex_t vtx = bsp->vertices[v];
+		
+			float s = v3dot(vtx.point, texinfo->vecs[0]) + texinfo->vecs[0][3];
+			float t = v3dot(vtx.point, texinfo->vecs[1]) + texinfo->vecs[1][3];
+
+			float lm_s = 1.0f;
+			float lm_t = 1.0f;
+
+			if(face->lightmapoffset > 0) {
+				lm_s = (s - lm->faces[f].texturemins[0]) + lm->rects[f].x * 16.0f + 8.0f;
+				lm_t = (t - lm->faces[f].texturemins[1]) + lm->rects[f].y * 16.0f + 8.0f;
+			
+				lm_s /= LIGHTMAP_WIDTH * 16.0f;
+				lm_t /= LIGHTMAP_HEIGHT * 16.0f;
+			}
+
+			s /= miptex->width;
+			t /= miptex->height;
+		
+			setvertex(&vertices[nv++], vtx.point[0], vtx.point[1], vtx.point[2], s, t, lm_s, lm_t);
+		}
+	}
+
+	/* all our data is now in the vertex buffer. we don't have to update it */
+	glBindBuffer(GL_ARRAY_BUFFER, s_gl.vao);
+	glBufferData(GL_ARRAY_BUFFER, numvertices * sizeof(glvertex_t), vertices, GL_STATIC_DRAW);
+
+	uint8_t *texturebits = calloc((bsp->miphdr->nummiptex + 7) / 8, bsp->numfaces);
+	s_gl.texturebits = texturebits;
+	
+	free(vertices);
+
+	return true;
+}
+
+
+static bool isbitset(uint8_t *b, int i)
+{
+	return b[i >> 3] & (1 << (i & 7));
+}
+
+static void setbit(uint8_t *b, int i, bool value)
+{
+	uint8_t f = 1 << (i & 7);
+	if(value) {
+		b[i >> 3] |= f;
+	} else {
+		b[i >> 3] &= ~f;
+	}
+}
+
+
+void gl_rmodel(bsp_t *bsp, const float origin[3], int32_t index)
 {
 	if(index < 0 || index > bsp->nummodels) {
 		fprintf(stderr, "gl_rmodel: model index %d out of bounds (0-%d)",
@@ -188,11 +323,19 @@ void gl_rmodel(bsp_t *bsp, GLuint *gltex, int32_t index)
 	}
 	
 	dmodel_t *mdl = &bsp->models[index];
+
+	uint8_t pvs[(MAX_MAP_LEAVES + 7) / 8];
+	if(index == 0) {
+		bsp_pvsfororigin(bsp, origin, pvs);
+	} else {
+		memset(pvs, 0xFF, (bsp->numleaves) / 8);
+	}
+
 	
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glTranslatef(mdl->origin[0], mdl->origin[1], mdl->origin[2]);
-	glMatrixMode(GL_PROJECTION);
+	
+	//glMatrixMode(GL_MODELVIEW);
+	//glPushMatrix();
+	//glTranslatef(mdl->origin[0], mdl->origin[1], mdl->origin[2]);
 
 	int16_t children[128];
 	
@@ -205,264 +348,222 @@ void gl_rmodel(bsp_t *bsp, GLuint *gltex, int32_t index)
 
 		if(child < 0) {
 			dleaf_t *leaf = &bsp->leaves[~child];
+			int16_t b = (~child) - 1;
 			
+			if(isbitset(pvs, b) == false) {
+				continue;
+			}
 			for(int32_t j = 0; j < leaf->nummarksurfaces; j++) {
-				int32_t face = bsp->marksurfaces[leaf->firstmarksurface + j];
-				gl_rface(bsp, gltex, &bsp->faces[face]);
+				int32_t f = bsp->marksurfaces[leaf->firstmarksurface + j];
+				dface_t *face = &bsp->faces[f];
+				texinfo_t *texinfo = &bsp->texinfo[face->texinfo];
+				setbit(&s_gl.texturebits[texinfo->miptex * ((bsp->numfaces + 7) / 8)], f, true);
 			}
 		} else {
 			dnode_t *node = &bsp->nodes[child];
 			dplane_t *plane = &bsp->planes[node->plane];
 
-			float dist;
+			float dist = 0;
 			switch(plane->type) {
-			case PLANE_X: dist = s_origin[0] - plane->dist; break;
-			case PLANE_Y: dist = s_origin[1] - plane->dist; break;
-			case PLANE_Z: dist = s_origin[2] - plane->dist; break;
-			default: dist = plane->normal[0] * s_origin[0] +
-					plane->normal[1] * s_origin[1] +
-					plane->normal[2] * s_origin[2];
-				dist -= plane->dist;
+			case PLANE_X: dist = origin[0] - plane->dist; break;
+			case PLANE_Y: dist = origin[1] - plane->dist; break;
+			case PLANE_Z: dist = origin[2] - plane->dist; break;
+			default:
+				dist = v3dot(plane->normal, origin) - plane->dist;
 				break;
 			}
-
 			if(nc > 128) {
 				fprintf(stderr, "gl_rmodel: stack overflow, skipping node %d\n", child);
+				continue;
 			}
-			
 			children[nc++] = node->children[dist > 0 ? 0 : 1];
 			children[nc++] = node->children[dist > 0 ? 1 : 0];
 		}
 	}
-	glPopMatrix();
 }
 
-float v3dot(const float a[3], const float b[3])
-{
-	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-	
-
-void gl_rface(bsp_t *bsp, GLuint *gltex, dface_t *face)
-{
-	texinfo_t *texinfo = &bsp->texinfo[face->texinfo];
-	glBindTexture(GL_TEXTURE_2D, gltex[texinfo->miptex]);
-
-	int32_t mipofs = bsp->miphdr->dataofs[texinfo->miptex];
-	miptex_t *miptex = (miptex_t *)(bsp->textures + mipofs);
-	
-	glBegin(GL_POLYGON);
-	
-	for(int32_t i = 0; i < face->numedges; i++) {
-		
-		int32_t edge = bsp->surfedges[face->firstedge + i];
-
-		int32_t v;
-		if(edge >= 0) {
-			v = bsp->edges[edge].v[0];
-		} else {
-			v = bsp->edges[-edge].v[1];
-		}
-
-		dvertex_t vtx = bsp->vertices[v];
-		
-		float s = v3dot(vtx.point, texinfo->vecs[0]) + texinfo->vecs[0][3];
-		float t = v3dot(vtx.point, texinfo->vecs[1]) + texinfo->vecs[1][3];
-
-		s /= (float)miptex->width;
-		t /= (float)miptex->height;
-		
-		glTexCoord2f(s, t);
-		glVertex3fv(vtx.point);
-	}
-	glEnd();
-}
 
 void gl_3dmode(void)
 {
-	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_TEXTURE_2D);
-	
-	float center[3];
-	center[0] = s_origin[0] + cosf(s_pitch) * cosf(s_yaw);
-	center[1] = s_origin[1] + cosf(s_pitch) * sinf(s_yaw);
-	center[2] = s_origin[2] - sinf(s_pitch);
-	
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-	
-	/* z is up */
-	gluLookAt(s_origin[0], s_origin[1], s_origin[2], 
-		  center[0], center[1], center[2],
-		  0.0, 0.0, 1.0);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
 
-	GLdouble aspect = (GLdouble)s_width / (GLdouble)s_height;
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);
 	
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	gluPerspective(90.0, aspect, 0.1, 10000.0);
-}
+	float mvp[4][4];
+	m4mult(s_gl.proj, s_gl.view, mvp);
 
-void gl_2dmode(void) {
-	
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_TEXTURE_2D);
-	
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(0, s_width, s_height, 0, -1.0, 1.0);
+	glUseProgram(s_gl.shader);
+	glUniformMatrix4fv(s_gl.u_mvp, 1, GL_FALSE, (const GLfloat *)mvp);
 
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
+	s_gl.nv = 0;
+	s_gl.ni = 0;
 }
 
 void gl_lookat(const float origin[3], float pitch, float yaw)
 {
-	s_origin[0] = origin[0];
-	s_origin[1] = origin[1];
-	s_origin[2] = origin[2];
-
-	s_pitch = pitch;
-	s_yaw = yaw;
+	m4lookat(origin, pitch, yaw, s_gl.view);
 }
 
-int gl_printf(float x, float y, const char *fmt, ...)
+void gl_end(const bsp_t *bsp, GLuint textures[])
 {
-	char buf[2048];
-	va_list args;
-	va_start(args, fmt);
-	int len = vsnprintf(buf, 2048, fmt, args);
-	va_end(args);
+	s_gl.nv = 0;
+	s_gl.ni = 0;
+	
+	for(int32_t i = 0; i < bsp->miphdr->nummiptex; i++) {
 
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, s_glfont);
+		if(textures[i] == 0) {
+			continue;
+		}
+		
+		s_gl.nv = 0;
+		s_gl.ni = 0;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, textures[i]);
+		
+		for(int32_t f = 0; f < bsp->numfaces; f++) {
+			if(isbitset(&s_gl.texturebits[i * ((bsp->numfaces + 7) / 8)], f)) {
+			dface_t *face = &bsp->faces[f];
+			int32_t v = s_gl.vtxlookup[f];
+			for(int32_t i = 0; i < face->numedges; i++) {
+				if(i >= 2) {
+					s_gl.idx[s_gl.ni++] = v;
+					s_gl.idx[s_gl.ni++] = (v + i) - 1;
+					s_gl.idx[s_gl.ni++] = (v + i);
+				}
+			}
+			}
+		}
+		glUseProgram(s_gl.shader);
+		glBindVertexArray(s_gl.vao);
 
-	glBegin(GL_QUADS);
-	for(int i = 0; i < len; i++) {
-		stbtt_aligned_quad q;
-		stbtt_GetPackedQuad(s_pc, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, buf[i], &x, &y, &q, 0);
-		glTexCoord2f(q.s0, q.t0); glVertex2f(q.x0, q.y0);
-		glTexCoord2f(q.s1, q.t0); glVertex2f(q.x1, q.y0);
-		glTexCoord2f(q.s1, q.t1); glVertex2f(q.x1, q.y1);
-		glTexCoord2f(q.s0, q.t1); glVertex2f(q.x0, q.y1);
+		glBindBuffer(GL_ARRAY_BUFFER, s_gl.vbo);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_gl.ibo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, s_gl.ni * sizeof(GLuint), s_gl.idx, GL_STATIC_DRAW);
+
+		glDrawElements(GL_TRIANGLES, s_gl.ni, GL_UNSIGNED_INT, 0);
 	}
-	glEnd();
-	glDisable(GL_TEXTURE_2D);
 
-	return len;
+	memset(s_gl.texturebits, 0, ((bsp->numfaces + 7) / 8) * bsp->miphdr->nummiptex);
 }
 
-
-double gl_time(void)
+GLuint gl_compileshaders(const char *vs_src, const char *fs_src)
 {
-	return glfwGetTime();
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vs, 1, &vs_src, NULL);
+	glCompileShader(vs);
+
+	GLint success;
+	char infolog[512];
+	glGetShaderiv(vs, GL_COMPILE_STATUS, &success);
+	if(!success) {
+		glGetShaderInfoLog(vs, 512, NULL, infolog);
+		fprintf(stderr, "%s", infolog);
+		return 0;
+	}
+
+	GLuint fs;
+	fs = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fs, 1, &fs_src, NULL);
+	glCompileShader(fs);
+
+	glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
+	if(!success) {
+		glGetShaderInfoLog(fs, 512, NULL, infolog);
+		fprintf(stderr, "%s", infolog);
+		return 0;
+	}
+
+	GLuint program = glCreateProgram();
+	glAttachShader(program, vs);
+	glAttachShader(program, fs);
+	glLinkProgram(program);
+
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
+	if(!success) {
+		glGetProgramInfoLog(program, 512, NULL, infolog);
+		fprintf(stderr, "%s", infolog);
+		return 0;
+	}
+
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+
+	return program;
 }
 
-void gl_clear(float r, float g, float b, float a)
+void gl_onresize(float w, float h)
 {
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	m4perspective(90.0f, w / h, 0.1f, 10000.0f, s_gl.proj);
 }
 
 int gl_init(void)
 {
-	const char *msg = NULL;
-	if(glfwInit() != GLFW_TRUE) {
+	static const char *vs_src =
+		"#version 330 core\n"
+		
+		"layout (location = 0) in vec3 pos;\n"
+		"layout (location = 1) in vec2 uv;\n"
+		"layout (location = 2) in vec2 lightmap;\n"
+		
+		"out vec2 a_lightmap;\n"
+		"out vec2 a_uv;\n"
+		
+		"uniform mat4 mvp;\n"
+
+		"void main() {\n"
+		
+		"gl_Position = mvp * vec4(pos, 1.0);\n"
+		"a_lightmap = lightmap;\n"
+		"a_uv = uv;\n"
+		"}";
+
+	static const char *fs_src =
+		"#version 330 core\n"
+		"out vec4 FragColor;\n"
+		"in vec2 a_lightmap;\n"
+		"in vec2 a_uv;\n"
+		"uniform sampler2D u_texture;\n"
+		"uniform sampler2D u_lightmap;\n"
+		"void main() {"
+		"vec4 tx_color = texture(u_texture, a_uv);"
+		"vec4 lm_color = texture(u_lightmap, a_lightmap);"
+		"float do_lm = 1.0f - floor(a_lightmap.x * a_lightmap.y);"
+		"FragColor = mix(tx_color, tx_color * lm_color, do_lm);\n"
+		"}";
+	
+	s_gl.shader = gl_compileshaders(vs_src, fs_src);
+	if(s_gl.shader == 0) {
 		goto bad;
 	}
-	   
-	/* Yes, I'm using an antiquated version of OpenGL.
-	   I don't want to bother with extension loaders,
-	   this is a study of the BSP file format, not modern OpenGL. */
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-	s_window = glfwCreateWindow(s_width, s_height, "BSP Study", NULL, NULL);
-	if(s_window == NULL) {
-		goto bad;
-	}
-
-	glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glUseProgram(s_gl.shader);
+	s_gl.u_mvp = glGetUniformLocation(s_gl.shader, "mvp");
+	GLuint u_texture = glGetUniformLocation(s_gl.shader, "u_texture");
+	GLuint u_lightmap = glGetUniformLocation(s_gl.shader, "u_lightmap");
 	
-	if(glfwRawMouseMotionSupported()) {
-		glfwSetInputMode(s_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-	}
+	glUniform1i(u_texture, 0);
+	glUniform1i(u_lightmap, 1);
 
-	glfwMakeContextCurrent(s_window);
-	glfwSetFramebufferSizeCallback(s_window, framebuffer_size_callback);
-	glfwSetKeyCallback(s_window, key_callback);
-	glfwSetCursorPosCallback(s_window, mouse_callback);
+	glGenBuffers(1, &s_gl.vbo);
+	glGenBuffers(1, &s_gl.ibo);
+	glGenVertexArrays(1, &s_gl.vao);
 
-	framebuffer_size_callback(s_window, s_width, s_height);
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	// TODO: implement proper back-to-front rendering
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_TEXTURE_2D);
-
-#ifndef _WIN32
-	const char *font = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-#else
-	const char *font = "C:\\Windows\\Fonts\\DejavuSans.ttf";
-#endif
-	glfwSwapInterval(0);
+	glBindVertexArray(s_gl.vao);
+	glBindBuffer(GL_ARRAY_BUFFER, s_gl.vbo);
 	
-	FILE *fp = fopen(font, "rb");
-	if(fp == NULL) {
-		fprintf(stderr, "Failed to open font: %s\n", font);
-		goto bad;
-	}
-	
-	fseek(fp, 0, SEEK_END);
-	size_t ttfsize = ftell(fp);
-	uint8_t *rawttf = malloc(ttfsize);
-	
-	fseek(fp, 0, SEEK_SET);
-	fread(rawttf, 1, ttfsize, fp);
-	fclose(fp);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, x));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, s));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, ls));
+	glEnableVertexAttribArray(2);
 
-	stbtt_pack_context ctx;
-	const float fontsize =  24.0f;
-	uint8_t *alpha = malloc(FONTATLAS_WIDTH * FONTATLAS_HEIGHT);
-	uint8_t *rgba = malloc(FONTATLAS_WIDTH * FONTATLAS_HEIGHT * 4);
-	stbtt_PackBegin(&ctx, alpha, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, 1, NULL);
-	stbtt_PackFontRange(&ctx, rawttf, 0, fontsize, 0, 128, s_pc);
-	stbtt_PackEnd(&ctx);
-
-	for(int i = 0; i < FONTATLAS_WIDTH * FONTATLAS_HEIGHT; i++) {
-		rgba[i * 4 + 0] = 0xFF;
-		rgba[i * 4 + 1] = 0xFF;
-		rgba[i * 4 + 2] = 0xFF;
-		rgba[i * 4 + 3] = alpha[i];
-	}
-
-	glGenTextures(1, &s_glfont);
-	glBindTexture(GL_TEXTURE_2D, s_glfont);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-	free(rawttf);
-	free(alpha);
-	free(rgba);
+	s_gl.idx = malloc(4096 * sizeof(int32_t));
 	
 	return EXIT_SUCCESS;
 bad:
-	glfwGetError(&msg);
-	if(msg != NULL) {
-		fprintf(stderr, "%s", msg);
-	}
-
-	gl_free();
 	return EXIT_FAILURE;
-}
-
-void gl_free()
-{
-	if(s_window != NULL) {
-		glfwDestroyWindow(s_window);
-	}
-	glfwTerminate();
 }

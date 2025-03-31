@@ -28,7 +28,7 @@ typedef struct miptex_s {
 } miptex_t;
 
 typedef struct {
-	char identification[4];
+	uint8_t id[4];
 	int32_t numlumps;
 	int32_t infotableofs;
 } wadinfo_t;
@@ -46,11 +46,12 @@ typedef struct {
 typedef struct {
 	FILE *fp;
 	lumpinfo_t *dirs;
+	miptex_t **cache;
 	int32_t numdirs;
 } wad_t;
 
 wad_t *wad_open(const char *filename);
-miptex_t *wad_getmiptex(wad_t *wad, const char *name);
+miptex_t *wad_getmiptex(const wad_t *wad, const char *name);
 void wad_close(wad_t *wad);
 
 #endif

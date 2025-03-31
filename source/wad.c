@@ -1,3 +1,5 @@
+#include <stdbool.h>
+#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -23,22 +25,36 @@ wad_t *wad_open(const char *filename)
 	fseek(wad->fp, 0, SEEK_SET);
 	fread(&hdr, 1, sizeof(wadinfo_t), wad->fp);
 
-	if(hdr.identification[0] != 'W' || hdr.identification[1] != 'A' ||
-	   hdr.identification[2] != 'D' || (hdr.identification[3] != '2' && hdr.identification[3] != '3')) {
+	if(hdr.id[0] != 'W' || hdr.id[1] != 'A' ||
+	   hdr.id[2] != 'D' || (hdr.id[3] != '2' && hdr.id[3] != '3')) {
 		fprintf(stderr, "wad_open: %s bad magic (%c%c%c%c)\n",
-			filename, hdr.identification[0], hdr.identification[1], hdr.identification[2], hdr.identification[3]);
+			filename, hdr.id[0], hdr.id[1], hdr.id[2], hdr.id[3]);
 		goto bad;
 	}
 
 	wad->numdirs = hdr.numlumps;
+	wad->cache = calloc(wad->numdirs, sizeof(miptex_t *));
+	if(wad->cache == NULL) {
+		goto bad;
+	}
 	
 	wad->dirs = malloc(sizeof(lumpinfo_t) * wad->numdirs);
 	if(wad->dirs == NULL) {
+		fprintf(stderr, "wad_open %s: bad alloc", filename);
 		goto bad;
 	}
 
-	fseek(wad->fp, hdr.infotableofs, SEEK_SET);
-	fread(wad->dirs, 1, sizeof(lumpinfo_t) * wad->numdirs, wad->fp);
+	if(fseek(wad->fp, hdr.infotableofs, SEEK_SET) != 0) {
+		fprintf(stderr, "wad_open %s: bad offset/seek %d\n",
+			filename, hdr.infotableofs);
+		goto bad;
+	};
+
+	size_t infotablebytes = sizeof(lumpinfo_t) * wad->numdirs;
+	if(fread(wad->dirs, 1, infotablebytes, wad->fp) != infotablebytes) {
+		fprintf(stderr, "wad_open %s: bad read\n", filename);
+		goto bad;
+	}
 	
 	return wad;
 bad:
@@ -46,13 +62,30 @@ bad:
 	return NULL;
 }
 
-miptex_t *wad_getmiptex(wad_t *wad, const char *name)
+static bool strncaseeq(const char *a, const char *b, size_t n)
+{
+	for(size_t i = 0; i < n; i++) {
+		if(a[i] == '\0' && b[i] == '\0') {
+			break;
+		}
+		char a_up = toupper(a[i]);
+		char b_up = toupper(b[i]);
+		if(a_up != b_up) {
+			return false;
+		}
+	}
+	return true;
+}
+
+miptex_t *wad_getmiptex(const wad_t *wad, const char *name)
 {
 	lumpinfo_t *dir = NULL;
 	for(int32_t i = 0; i < wad->numdirs; i++) {
-		if(!strncmp(name, wad->dirs[i].name, MAXTEXTURENAME)) {
+		if(strncaseeq(name, wad->dirs[i].name, MAXTEXTURENAME)) {
 			dir = &wad->dirs[i];
-			break;
+			if(wad->cache[i]) {
+				return wad->cache[i];
+			}
 		}
 	}
 
@@ -62,12 +95,12 @@ miptex_t *wad_getmiptex(wad_t *wad, const char *name)
 
 	// TODO: support compression
 	if(dir->compression != CMP_NONE) {
-		fprintf(stderr, "Texture %s is compressed, bspstudy does not support compression", name);
+		fprintf(stderr, "texture %s is compressed, bspstudy does not support compression", name);
 		return NULL;
 	}
 
 	if(dir->type != TYP_MIPTEX) {
-		fprintf(stderr, "Texture %s is not in miptex format\n", name);
+		fprintf(stderr, "texture %s is not in miptex format\n", name);
 		return NULL;
 	}
 
@@ -79,25 +112,28 @@ miptex_t *wad_getmiptex(wad_t *wad, const char *name)
 	fseek(wad->fp, dir->filepos, SEEK_SET);
 	fread(mt, 1, dir->size, wad->fp);
 
-	if(strncmp(dir->name, mt->name, MAXTEXTURENAME) != 0) {
+	if(!strncaseeq(dir->name, mt->name, MAXTEXTURENAME)) {
 		fprintf(stderr,
-			"Warning: Miptex name does not match directory name.\n"
-			"\tExpected: %s, got %s\n"
-			, dir->name, mt->name);
+			"warning: miptex name does not match directory name.\n"
+			"\texpected: %s, got %s\n", dir->name, mt->name);
 	}
-	
 	return mt;
 }
 
 void wad_close(wad_t *wad)
 {
-	if(wad != NULL) {
-		if(wad->fp != NULL) {
-			fclose(wad->fp);
-		}
-		if(wad->dirs != NULL) {
-			free(wad->dirs);
-		}
-		free(wad);
+	if(wad == NULL) {
+		return;
 	}
+	if(wad->fp != NULL) {
+		fclose(wad->fp);
+	}
+	if(wad->cache != NULL) {
+		for(int32_t i = 0; i < wad->numdirs; i++) {
+			free(wad->cache[i]);
+		}
+	}
+	free(wad->cache);
+	free(wad->dirs);
+	free(wad);
 }

@@ -3,9 +3,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "v_math.h"
 #include "entity.h"
 #include "bsp.h"
 #include "wad.h"
+
 
 static const char *bsp_lumpname(int lump_num)
 {
@@ -26,8 +28,7 @@ static const char *bsp_lumpname(int lump_num)
 	case LUMP_SURFEDGES:    return "LUMP_SURFEDGES";
 	case LUMP_MODELS:       return "LUMP_MODELS";
 	case HEADER_LUMPS:      return "HEADER_LUMPS";
-	default:
-		break;
+	default:                return NULL;
 	}
 }
 
@@ -75,17 +76,18 @@ static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcou
 	int32_t offset = hdr->lump[lumpid].offset;
 	int32_t maxsize = maxsizes[lumpid];
 	int32_t elemsize = elemsizes[lumpid];
-
-	printf("\t%-18s{ length: %6X, offset: %6X }\n",
-	       bsp_lumpname(lumpid), length, offset); 
 	
-	if(length % elemsize != 0 || length / elemsize > maxsize) {
+	if(length % elemsize != 0) {
 		fprintf(stderr, "loadlump %s: bad length: %d\n",
 			bsp_lumpname(lumpid), length);
-
 		return NULL;
 	}
 
+	if(length / elemsize > maxsize) {
+		fprintf(stderr, "waring: lump %s too large (%d > %d)\n",
+			bsp_lumpname(lumpid), length / elemsize, maxsize);
+	}
+	
 	if((data = malloc(length)) == NULL) {
 		fprintf(stderr, "loadlump %s: bad alloc\n",
 			bsp_lumpname(lumpid));
@@ -99,7 +101,7 @@ static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcou
 		return NULL;
 	};
 
-	if(fread(data, 1, length, fp) != length) {
+	if(fread(data, 1, length, fp) != (size_t)length) {
 		fprintf(stderr, "loadlump %s: bad read\n",
 			bsp_lumpname(lumpid));
 		free(data);
@@ -116,18 +118,16 @@ void bsp_free(bsp_t *bsp)
 	if(bsp == NULL) {
 		return;
 	}
-
+	
 	for(int i = 0; i < HEADER_LUMPS; i++) {
-		if(bsp->lumps[i] != NULL) {
-			free(bsp->lumps[i]);
-		}
+		free(bsp->lumps[i]);
 	}
 
 	free(bsp);
 }
 
 
-const char *bsp_wadname(bsp_t *bsp)
+const char *bsp_wadname(const bsp_t *bsp)
 {
 	const char *wadname = NULL;
 	for(int i = 0; i < bsp->numentities; i++) {
@@ -145,10 +145,6 @@ const char *bsp_wadname(bsp_t *bsp)
 	while(*end != '\0') {
 		end++;
 	}
-	
-	if(end[-1] != 'd' || end[-2] != 'a' || end[-3] != 'w' || end[-4] != '.') {
-		printf("WAD file does not end with a .wad file extension\n");
-	}
 
 	for(; end != wadname; end--) {
 		if(*end == '\\' || *end =='/') {
@@ -160,10 +156,66 @@ const char *bsp_wadname(bsp_t *bsp)
 	return wadname;
 }
 
+
+void bsp_decompressvis(const bsp_t *bsp, const uint8_t *in, uint8_t *decompressed)
+{
+	int32_t row = (bsp->numleaves + 7) >> 3;
+	uint8_t *out = decompressed;
+	while(out - decompressed < row) {
+		if(*in) {
+			*out++ = *in;
+		} else {
+			in++;
+			for(int32_t i = 0; i < *in; i++) {
+				*out++ = 0;
+			}
+		}
+		in++;
+	}
+}
+
+
+dleaf_t *bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
+{
+	dmodel_t *mdl = &bsp->models[0];
+	int16_t index = mdl->headnode[0];
+
+	while(index >= 0) {
+		dnode_t *node = &bsp->nodes[index];
+		dplane_t *plane = &bsp->planes[node->plane];
+		float dist = 0;
+		switch(plane->type) {
+			case PLANE_X: dist = origin[0] - plane->dist; break;
+			case PLANE_Y: dist = origin[1] - plane->dist; break;
+			case PLANE_Z: dist = origin[2] - plane->dist; break;
+		default:
+			dist = v3dot(plane->normal, origin) - plane->dist;
+			break;
+		}
+		index = node->children[dist > 0 ? 0 : 1];
+	}
+	return &bsp->leaves[-index - 1];
+}
+
+
+void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *out)
+{
+	dleaf_t *leaf = bsp_pointinleaf(bsp, origin);
+
+	memset(out, 255, (bsp->numleaves + 7) / 8);
+
+	if(leaf->vis == -1) {
+		return;
+	}
+
+	bsp_decompressvis(bsp, &bsp->vis[leaf->vis], out);
+}
+
+
 bsp_t *bsp_open(const char *filename)
 {
 	bsp_t *bsp = NULL;
-	bsp = malloc(sizeof(bsp_t));
+	bsp = calloc(1, sizeof(bsp_t));
 
 	if(bsp == NULL) {
 		return NULL;
@@ -173,6 +225,7 @@ bsp_t *bsp_open(const char *filename)
 
 	FILE *fp = fopen(filename, "rb");
 	if(fp == NULL) {
+		fprintf(stderr, "%s: failed to open file\n", filename);
 		goto bad;
 	}
 
@@ -187,8 +240,8 @@ bsp_t *bsp_open(const char *filename)
 		}
 	}
 
-	struct entity *entities = NULL;
-	entities = calloc(MAX_MAP_ENTITIES, sizeof(struct entity));
+	entity_t *entities = NULL;
+	entities = calloc(MAX_MAP_ENTITIES, sizeof(entity_t));
 
 	int32_t numentities = entparse(bsp->entdata, bsp->entdatasize, entities);
 	
