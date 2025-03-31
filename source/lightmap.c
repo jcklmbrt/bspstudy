@@ -117,9 +117,7 @@ bool lm_init(const bsp_t *bsp, lightmap_t *lm)
 					GL_RGB, GL_UNSIGNED_BYTE, data);
 		}
 	}
-	
 	free(nodes);
-	
 	return true;
 bad_alloc:
 	fprintf(stderr, "lightmap: bad alloc");

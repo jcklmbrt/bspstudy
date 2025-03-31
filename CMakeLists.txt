@@ -16,7 +16,9 @@ add_executable(bspstudy
   "source/hud.h"
   "source/hud.c"
   "source/lightmap.c"
-  "source/lightmap.h")
+  "source/lightmap.h"
+  "source/camera.c"
+  "source/camera.h")
 
 set(CMAKE_C_STANDARD 11)
 
@@ -28,7 +30,7 @@ else()
   target_compile_options(bspstudy PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
-set(OpenGL_GL_PREFERENCE "LEGACY")
+set(OpenGL_GL_PREFERENCE "GLVND")
 find_package(OpenGL REQUIRED)
 
 set(GLAD_SOURCES_DIR "${PROJECT_SOURCE_DIR}/3rd_party/glad")

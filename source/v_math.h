@@ -62,6 +62,30 @@ M_INL void v3cross(const float a[3], const float b[3], float out[3])
 	out[2] = a[0] * b[1] - b[0] * a[1];
 }
 
+M_INL void v3angles(float pitch, float yaw, float forward[3], float side[3], float up[3])
+{
+	float cp = cosf(pitch);
+	float sp = sinf(pitch);
+	float cy = cosf(yaw);
+	float sy = sinf(yaw);
+
+	if(forward) {
+		forward[0] = cp*cy;
+		forward[1] = cp*sy;
+		forward[2] = -sp;
+	}
+	if(side) {
+		side[0] = sy;
+		side[1] = -cy;
+		side[2] = 0.0f;
+	}
+	if(up) {
+		up[0] = 0.0f;
+		up[1] = 0.0f;
+		up[2] = 1.0f;
+	}
+
+}
 
 M_INL float v3len(const float in[3])
 {
@@ -107,7 +131,6 @@ M_INL void m4perspective(float fovy, float aspect, float znear, float zfar, floa
 	m[3][2] = (2.0 * zfar * znear) / d;
 	m[3][3] = 0.0f;
 }
-
 
 M_INL void m4lookat(const float origin[3], float pitch, float yaw, float m[4][4])
 {
@@ -186,7 +209,7 @@ M_INL void m4ortho2d(float left, float right, float bottom, float top, float m[4
 	m[3][3] = 1.0f;
 }
 
-M_INL void m4mult(/* const */ float a[4][4], /* const */ float b[4][4], float out[4][4])
+M_INL void m4mult(const float a[4][4], const float b[4][4], float out[4][4])
 {
 	float tmp[4][4];
 	

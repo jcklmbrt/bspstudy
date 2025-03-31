@@ -175,7 +175,7 @@ void bsp_decompressvis(const bsp_t *bsp, const uint8_t *in, uint8_t *decompresse
 }
 
 
-dleaf_t *bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
+int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
 {
 	dmodel_t *mdl = &bsp->models[0];
 	int16_t index = mdl->headnode[0];
@@ -194,13 +194,14 @@ dleaf_t *bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
 		}
 		index = node->children[dist > 0 ? 0 : 1];
 	}
-	return &bsp->leaves[-index - 1];
+	return -index - 1;
 }
 
 
 void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *out)
 {
-	dleaf_t *leaf = bsp_pointinleaf(bsp, origin);
+	int32_t i = bsp_pointinleaf(bsp, origin);
+	dleaf_t *leaf = &bsp->leaves[i];
 
 	memset(out, 255, (bsp->numleaves + 7) / 8);
 

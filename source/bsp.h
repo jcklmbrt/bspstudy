@@ -96,7 +96,6 @@ typedef struct {
 } dplane_t;
 
 
-/* signed/unsigned ambiguity in documentation :/ */
 #define MAXLIGHTMAPS 4
 typedef struct {
 	int16_t plane;
@@ -222,6 +221,7 @@ typedef struct
 bsp_t *bsp_open(const char *filename);
 const char *bsp_wadname(const bsp_t *bsp);
 void bsp_free(bsp_t *bsp);
+int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3]);
 void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *pvs);
 
 

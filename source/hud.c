@@ -1,4 +1,7 @@
+#include <stddef.h>
+
 #include "gl.h"
+#include "glad/gl.h"
 #include "v_math.h"
 #include "hud.h"
 
@@ -16,6 +19,17 @@ static void setvertex(hudvtx_t *vtx, float x, float y, float s, float t)
 	vtx->a = 1.0f;
 	vtx->s = s;
 	vtx->t = t;
+}
+
+
+void hud_free(hud_t *hud)
+{
+	free(hud->vtx);
+	free(hud->idx);
+	glDeleteShader(hud->shader);
+	glDeleteBuffers(1, &hud->vbo);
+	glDeleteBuffers(1, &hud->ibo);
+	glDeleteVertexArrays(1, &hud->vao);
 }
 
 
@@ -49,13 +63,15 @@ bool hud_init(hud_t *hud)
 		"vec4 tx_color = texture(u_texture, a_uv) * a_color;\n"
 		"float do_tx = 1.0f - floor(a_uv.x * a_uv.y)\n;"
 		"FragColor = texture(u_texture, a_uv);\n"
-//		"FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);\n"
 		"}";
 
 	hud->shader = gl_compileshaders(vs_src, fs_src);
 	glUseProgram(hud->shader);
 
 	hud->u_ortho = glGetUniformLocation(hud->shader, "u_ortho");
+
+	GLuint u_texture = glGetUniformLocation(hud->shader, "u_texture");
+	glUniform1i(u_texture, 0);
 
 	glGenBuffers(1, &hud->vbo);
 	glGenBuffers(1, &hud->ibo);
@@ -131,22 +147,21 @@ void hud_clear(hud_t *hud)
 
 void hud_drawelems(const hud_t *hud)
 {
-	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
+	glDisable(GL_DEPTH_TEST);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	
 	glUseProgram(hud->shader);
-
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, hud->fontatlas);
-	glBindVertexArray(hud->vao);
 
+	glUniformMatrix4fv(hud->u_ortho, 1, GL_FALSE, (const GLfloat *)hud->ortho);
+	
+	glBindVertexArray(hud->vao);
 	glBindBuffer(GL_ARRAY_BUFFER, hud->vbo);
 	glBufferData(GL_ARRAY_BUFFER, hud->nv * sizeof(hudvtx_t), hud->vtx, GL_STATIC_DRAW);
-	
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, hud->ibo);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, hud->ni * sizeof(GLuint), hud->idx, GL_STATIC_DRAW);
-
 	glDrawElements(GL_TRIANGLES, hud->ni, GL_UNSIGNED_INT, 0);
 }
 
@@ -206,7 +221,5 @@ int hud_puts(hud_t *hud, float x, float y, const char *s, size_t len)
 
 void hud_onresize(hud_t *hud, float w, float h)
 {
-	float ortho[4][4];
-	m4ortho2d(0, w, h, 0, ortho);
-	glUniformMatrix4fv(hud->u_ortho, 1, GL_FALSE, (const GLfloat *)ortho);
+	m4ortho2d(0, w, h, 0, hud->ortho);
 }

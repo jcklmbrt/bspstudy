@@ -31,6 +31,7 @@ typedef struct {
 	GLuint vao;
 	GLuint ibo;
 
+	float ortho[4][4];
 	GLuint u_ortho;
 	
 	GLuint *idx;
@@ -40,11 +41,14 @@ typedef struct {
 	size_t nv;
 } hud_t;
 
+
 bool hud_init(hud_t *hud);
+void hud_free(hud_t *hud);
 void hud_clear(hud_t *hud);
 void hud_drawelems(const hud_t *hud);
 void hud_onresize(hud_t *hud, float w, float h);
 void hud_strsize(hud_t *hud, float *w, float *h, const char *s, size_t len);
 int hud_puts(hud_t *hud, float x, float y, const char *s, size_t len);
+
 
 #endif
