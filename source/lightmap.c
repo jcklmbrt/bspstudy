@@ -130,10 +130,8 @@ bad_alloc:
 
 void lm_free(lightmap_t *lm)
 {
-	if(lm == NULL) {
-		return;
-	}
 	free(lm->faces);
 	free(lm->rects);
+	glActiveTexture(LIGHTMAP_TEXTURE_UNIT);
 	glDeleteTextures(1, &lm->texture);
 }

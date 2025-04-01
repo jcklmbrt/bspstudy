@@ -115,9 +115,6 @@ static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcou
 
 void bsp_free(bsp_t *bsp)
 {
-	if(bsp == NULL) {
-		return;
-	}
 	for(int i = 0; i < HEADER_LUMPS; i++) {
 		free(bsp->lumps[i]);
 	}

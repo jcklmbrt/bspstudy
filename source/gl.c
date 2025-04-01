@@ -146,8 +146,10 @@ static bool r_setupvertices(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm)
 		numvertices += face->numedges;
 	}
 
+	
 	rvtx_t *vertices = calloc(numvertices, sizeof(rvtx_t));
 
+	r->idx = calloc(numvertices, sizeof(rvtx_t));
 	r->vtxlookup = calloc(bsp->numfaces, sizeof(int32_t));
 
 	int32_t nv = 0;
@@ -207,6 +209,8 @@ static bool r_setupvertices(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm)
 	return true;
 }
 
+
+
 size_t r_world(rctx_t *r, const bsp_t *bsp, const cam_t *cam)
 {
 	glEnable(GL_TEXTURE_2D);
@@ -228,30 +232,29 @@ size_t r_world(rctx_t *r, const bsp_t *bsp, const cam_t *cam)
 	glBindBuffer(GL_ARRAY_BUFFER, r->vbo);
 
 	for(int32_t i = 0; i < bsp->miphdr->nummiptex; i++) {
-		
+
 		size_t ni = 0;
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, r->textures[i]);
 		
 		for(int32_t f = 0; f < bsp->numfaces; f++) {
 			if(isbitset(&cam->texturebits[i * ((bsp->numfaces + 7) / 8)], f)) {
-			dface_t *face = &bsp->faces[f];
-
-			int32_t v = r->vtxlookup[f];
-			for(int32_t e = 0; e < face->numedges; e++) {
-				if(e >= 2) {
-					r->idx[ni++] = v;
-					r->idx[ni++] = (v + e) - 1;
-					r->idx[ni++] = (v + e);
+				dface_t *face = &bsp->faces[f];
+				int32_t v = r->vtxlookup[f];
+				for(int32_t e = 0; e < face->numedges; e++) {
+					if(e >= 2) {
+						r->idx[ni++] = v;
+						r->idx[ni++] = (v + e) - 1;
+						r->idx[ni++] = (v + e);
+					}
 				}
 			}
-			}
+			
 		}
 		
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->ibo);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, ni * sizeof(GLuint), r->idx, GL_STATIC_DRAW);
 		glDrawElements(GL_TRIANGLES, ni, GL_UNSIGNED_INT, 0);
-
 		size += ni;
 	}
 
@@ -381,6 +384,7 @@ void r_free(rctx_t *r, const bsp_t *bsp)
 	glDeleteBuffers(1, &r->vbo);
 	glDeleteBuffers(1, &r->ibo);
 	glDeleteVertexArrays(1, &r->vao);
+	glActiveTexture(GL_TEXTURE0);
 	glDeleteTextures(bsp->miphdr->nummiptex, r->textures);
 	glDeleteProgram(r->shader);
 }
@@ -446,8 +450,6 @@ bool r_init(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm)
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(rvtx_t), (void *)offsetof(rvtx_t, ls));
 	glEnableVertexAttribArray(2);
-
-	r->idx = malloc(bsp->numvertices * sizeof(int32_t));
 
 	if(!r_loadtextures(r, bsp)) {
 		goto bad;

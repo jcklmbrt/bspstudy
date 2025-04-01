@@ -212,7 +212,7 @@ int main(int argc, char **argv)
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		size_t nv = r_world(&r, &bsp, &cam);
+		int32_t nv = r_world(&r, &bsp, &cam);
 
 		for(int i = 0; i < nummodels; i++) {
 			r_model(&r, &bsp, &cam, brushmodels[i]);
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
 		len = snprintf(buf, sizeof(buf),
 			 "%.01f Frames Per Second\n"
 			 "BSP File: %s\n"
-			       "Vertices drawn: %lu",
+			       "Vertices drawn: %d",
 			       1.0f / dt, filename, nv);
 
 		hud_puts(&hud, 24.0f, 24.0f, buf, len);
