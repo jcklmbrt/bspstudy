@@ -60,9 +60,8 @@ bool hud_init(hud_t *hud)
 		"in vec2 a_uv;\n"
 		"uniform sampler2D u_texture;\n"
 		"void main() {"
-		"vec4 tx_color = texture(u_texture, a_uv) * a_color;\n"
-		"float do_tx = 1.0f - floor(a_uv.x * a_uv.y)\n;"
-		"FragColor = texture(u_texture, a_uv);\n"
+		"float alpha = a_color.a * texture(u_texture, a_uv).r;"
+		"FragColor = vec4(a_color.xyz, alpha);\n"
 		"}";
 
 	hud->shader = gl_compileshaders(vs_src, fs_src);
@@ -111,29 +110,20 @@ bool hud_init(hud_t *hud)
 
 	stbtt_pack_context ctx;
 	const float fontsize =  16.0f;
-	uint8_t *alpha = malloc(FONTATLAS_WIDTH * FONTATLAS_HEIGHT);
-	uint8_t *rgba = malloc(FONTATLAS_WIDTH * FONTATLAS_HEIGHT * 4);
-	stbtt_PackBegin(&ctx, alpha, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, 1, NULL);
+	uint8_t *data = malloc(FONTATLAS_WIDTH * FONTATLAS_HEIGHT);
+	stbtt_PackBegin(&ctx, data, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, 1, NULL);
 	stbtt_PackFontRange(&ctx, rawttf, 0, fontsize, 0, FONT_RANGE, hud->pc);
 	stbtt_PackEnd(&ctx);
-
-	for(int i = 0; i < FONTATLAS_WIDTH * FONTATLAS_HEIGHT; i++) {
-		rgba[i * 4 + 0] = 0xFF;
-		rgba[i * 4 + 1] = 0xFF;
-		rgba[i * 4 + 2] = 0xFF;
-		rgba[i * 4 + 3] = alpha[i];
-	}
 
 	glActiveTexture(GL_TEXTURE0);
 	glGenTextures(1, &hud->fontatlas);
 	glBindTexture(GL_TEXTURE_2D, hud->fontatlas);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, data);
 	
 	free(rawttf);
-	free(alpha);
-	free(rgba);
+	free(data);
 
 	return true;
 }
@@ -214,7 +204,6 @@ int hud_puts(hud_t *hud, float x, float y, const char *s, size_t len)
 		hud->idx[hud->ni++] = nv + 3;
 		hud->idx[hud->ni++] = nv + 2;
 	}
-
 	return len;
 }
 

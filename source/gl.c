@@ -16,44 +16,12 @@
 #include <stb_rect_pack.h>
 #include <GLFW/glfw3.h>
 
+
 typedef struct {
 	float x, y, z;
 	float s, t;
 	float ls, lt; // lightmap coords
-} glvertex_t;
-
-static void setvertex(glvertex_t *vtx, float x, float y, float z, float s, float t, float ls, float lt)
-{
-	vtx->x = x;
-	vtx->y = y;
-	vtx->z = z;
-	vtx->s = s;
-	vtx->t = t;
-	vtx->ls = ls;
-	vtx->lt = lt;
-}
-
-typedef struct {
-	// gl objects
-	GLuint shader;
-	GLuint vbo;
-	GLuint ibo;
-	GLuint vao;
-
-	// uniforms
-	GLint u_mvp;
-	
-	// starting vertex for each face
-	int32_t *vtxlookup;
-
-	GLuint *textures;
-	
-	GLuint *idx;
-	int32_t ni;
-} gl_t;
-
-
-static gl_t s_gl;
+} rvtx_t;
 
 
 static void miptexrgba(const miptex_t *mt, uint8_t *rgba)
@@ -82,44 +50,7 @@ static void miptexrgba(const miptex_t *mt, uint8_t *rgba)
 }
 
 
-bool m4mulv3(float m[4][4], const float in[3], float out[3])
-{
-	float x = in[0] * m[0][0] + in[1] * m[1][0] + in[2] * m[2][0] + m[3][0];
-	float y = in[0] * m[0][1] + in[1] * m[1][1] + in[2] * m[2][1] + m[3][1];
-	float z = in[0] * m[0][2] + in[1] * m[1][2] + in[2] * m[2][2] + m[3][2];
-	float w = in[0] * m[0][3] + in[1] * m[1][3] + in[2] * m[2][3] + m[3][3];
-	
-	if(w < 0.001f) {
-		return false;
-	}
-
-	out[0] = x / w;
-	out[1] = y / w;
-	out[2] = z / w;
-
-	return true;
-}
-
-
-bool gl_world2screen(const cam_t *cam, const float world[3], float w, float h, float *x, float *y)
-{
-	float screen[3];
-	float mvp[4][4];
-	m4mult(cam->proj, cam->view, mvp);
-
-	if(!m4mulv3(mvp, world, screen)) {
-		return false;
-	}
-
-	*x = (screen[0] + 1.0f) * (0.5f * w);
-	*y = (screen[1] + 1.0f) * (0.5f * h);
-	*y = h - *y;
-
-	return true;
-}
-
-
-static bool gl_loadtextures(const bsp_t *bsp)
+static bool r_loadtextures(rctx_t *r, const bsp_t *bsp)
 {
 	uint8_t *rgba = NULL;
 	const char *wadname = bsp_wadname(bsp);
@@ -134,13 +65,13 @@ static bool gl_loadtextures(const bsp_t *bsp)
 		}
 	}
 
-	s_gl.textures = calloc(bsp->miphdr->nummiptex, sizeof(GLuint));
-	if(s_gl.textures == NULL) {
+	r->textures = calloc(bsp->miphdr->nummiptex, sizeof(GLuint));
+	if(r->textures == NULL) {
 		goto bad;
 	}
 
 	glActiveTexture(GL_TEXTURE0);
-	glGenTextures(bsp->miphdr->nummiptex, s_gl.textures);
+	glGenTextures(bsp->miphdr->nummiptex, r->textures);
 
 	int32_t maxdim = 0;
 
@@ -191,8 +122,8 @@ static bool gl_loadtextures(const bsp_t *bsp)
 		}
 		miptexrgba(miptex, rgba);
 		glActiveTexture(GL_TEXTURE0);
-		glGenTextures(1, &s_gl.textures[i]);
-		glBindTexture(GL_TEXTURE_2D, s_gl.textures[i]);
+		glGenTextures(1, &r->textures[i]);
+		glBindTexture(GL_TEXTURE_2D, r->textures[i]);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, miptex->width, miptex->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
@@ -201,13 +132,13 @@ static bool gl_loadtextures(const bsp_t *bsp)
 	return true;
 bad:
 	wad_close(wad);
-	free(s_gl.textures);
+	free(r->textures);
 	free(rgba);
 	return false;
 }
 
 
-static bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
+static bool r_setupvertices(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm)
 {
 	int32_t numvertices = 0;
 	for(int32_t i = 0; i < bsp->numfaces; i++) {
@@ -215,9 +146,9 @@ static bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
 		numvertices += face->numedges;
 	}
 
-	glvertex_t *vertices = calloc(numvertices, sizeof(glvertex_t));
+	rvtx_t *vertices = calloc(numvertices, sizeof(rvtx_t));
 
-	s_gl.vtxlookup = calloc(bsp->numfaces, sizeof(int32_t));
+	r->vtxlookup = calloc(bsp->numfaces, sizeof(int32_t));
 
 	int32_t nv = 0;
 
@@ -227,7 +158,7 @@ static bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
 		int32_t mipofs = bsp->miphdr->dataofs[texinfo->miptex];
 		miptex_t *miptex = (miptex_t *)(bsp->textures + mipofs);
 
-		s_gl.vtxlookup[f] = nv; 
+		r->vtxlookup[f] = nv; 
 
 		for(int32_t i = 0; i < face->numedges; i++) {
 		
@@ -258,18 +189,25 @@ static bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
 
 			s /= miptex->width;
 			t /= miptex->height;
-		
-			setvertex(&vertices[nv++], vtx.point[0], vtx.point[1], vtx.point[2], s, t, lm_s, lm_t);
+
+			vertices[nv].x = vtx.point[0];
+			vertices[nv].y = vtx.point[1];
+			vertices[nv].z = vtx.point[2];
+			vertices[nv].s = s;
+			vertices[nv].t = t;
+			vertices[nv].ls = lm_s;
+			vertices[nv].lt = lm_t;
+			nv++;
 		}
 	}
 	/* all our data is now in the vertex buffer. we don't have to update it */
-	glBindBuffer(GL_ARRAY_BUFFER, s_gl.vbo);
-	glBufferData(GL_ARRAY_BUFFER, numvertices * sizeof(glvertex_t), vertices, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, r->vbo);
+	glBufferData(GL_ARRAY_BUFFER, numvertices * sizeof(rvtx_t), vertices, GL_STATIC_DRAW);
 	free(vertices);
 	return true;
 }
 
-size_t gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
+size_t r_world(rctx_t *r, const bsp_t *bsp, const cam_t *cam)
 {
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
@@ -283,40 +221,111 @@ size_t gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
 
 	size_t size = 0;
 	
-	glUseProgram(s_gl.shader);
-	glUniformMatrix4fv(s_gl.u_mvp, 1, GL_FALSE, (const GLfloat *)mvp);
+	glUseProgram(r->shader);
+	glUniformMatrix4fv(r->u_mvp, 1, GL_FALSE, (const GLfloat *)mvp);
 
-	glBindVertexArray(s_gl.vao);
-	glBindBuffer(GL_ARRAY_BUFFER, s_gl.vbo);
+	glBindVertexArray(r->vao);
+	glBindBuffer(GL_ARRAY_BUFFER, r->vbo);
 
 	for(int32_t i = 0; i < bsp->miphdr->nummiptex; i++) {
 		
-		s_gl.ni = 0;
+		size_t ni = 0;
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, s_gl.textures[i]);
+		glBindTexture(GL_TEXTURE_2D, r->textures[i]);
 		
 		for(int32_t f = 0; f < bsp->numfaces; f++) {
 			if(isbitset(&cam->texturebits[i * ((bsp->numfaces + 7) / 8)], f)) {
 			dface_t *face = &bsp->faces[f];
 
-			int32_t v = s_gl.vtxlookup[f];
+			int32_t v = r->vtxlookup[f];
 			for(int32_t e = 0; e < face->numedges; e++) {
 				if(e >= 2) {
-					s_gl.idx[s_gl.ni++] = v;
-					s_gl.idx[s_gl.ni++] = (v + e) - 1;
-					s_gl.idx[s_gl.ni++] = (v + e);
+					r->idx[ni++] = v;
+					r->idx[ni++] = (v + e) - 1;
+					r->idx[ni++] = (v + e);
 				}
 			}
 			}
 		}
+		
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->ibo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, ni * sizeof(GLuint), r->idx, GL_STATIC_DRAW);
+		glDrawElements(GL_TRIANGLES, ni, GL_UNSIGNED_INT, 0);
 
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_gl.ibo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, s_gl.ni * sizeof(GLuint), s_gl.idx, GL_STATIC_DRAW);
-		glDrawElements(GL_TRIANGLES, s_gl.ni, GL_UNSIGNED_INT, 0);
-		size += s_gl.ni;
+		size += ni;
 	}
 
 	return size;
+}
+
+void r_model(rctx_t *r, const bsp_t *bsp, const cam_t *cam, size_t index)
+{
+	dmodel_t *mdl = &bsp->models[index];
+	
+	float mvp[4][4], translation[4][4];
+	m4translate(mdl->origin, translation);
+	m4mult(cam->proj, cam->view, mvp);
+	m4mult((const float(*)[])mvp, (const float(*)[])translation, mvp);
+
+	glUseProgram(r->shader);
+	glUniformMatrix4fv(r->u_mvp, 1, GL_FALSE, (const GLfloat *)mvp);
+
+	int32_t nc = 0;
+	int16_t children[128];
+
+	children[nc++] = mdl->headnode[0];
+
+	while(nc > 0) {
+		int16_t child = children[--nc];
+		if(child < 0) {
+			dleaf_t *leaf = &bsp->leaves[~child];
+			if(!boxinfrustum((float (*)[])cam->frustum, leaf->mins, leaf->maxs)) {
+				continue;
+			}
+			for(int32_t j = 0; j < leaf->nummarksurfaces; j++) {
+				int32_t f = bsp->marksurfaces[leaf->firstmarksurface + j];
+				dface_t *face = &bsp->faces[f];
+				texinfo_t *texinfo = &bsp->texinfo[face->texinfo];
+
+				size_t ni = 0;
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, r->textures[texinfo->miptex]);
+				int32_t v = r->vtxlookup[f];
+				for(int32_t e = 0; e < face->numedges; e++) {
+					r->idx[ni++] = v;
+					r->idx[ni++] = (v + e) - 1;
+					r->idx[ni++] = (v + e);
+				}
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->ibo);
+				glBufferData(GL_ELEMENT_ARRAY_BUFFER, ni * sizeof(GLuint), r->idx, GL_STATIC_DRAW);
+				glDrawElements(GL_TRIANGLES, ni, GL_UNSIGNED_INT, 0);
+
+			}
+		} else {
+			dnode_t *node = &bsp->nodes[child];
+			dplane_t *plane = &bsp->planes[node->plane];
+
+			if(!boxinfrustum((float (*)[])cam->frustum, node->mins, node->maxs)) {
+				continue;
+			}
+			
+			float dist = 0;
+			switch(plane->type) {
+			case PLANE_X: dist = cam->origin[0] - plane->dist; break;
+			case PLANE_Y: dist = cam->origin[1] - plane->dist; break;
+			case PLANE_Z: dist = cam->origin[2] - plane->dist; break;
+			default:
+				dist = v3dot(plane->normal, cam->origin) - plane->dist;
+				break;
+			}
+			if(nc > 128) {
+				fprintf(stderr, "r_model: stack overflow, skipping node %d\n", child);
+				continue;
+			}
+			children[nc++] = node->children[dist > 0 ? 0 : 1];
+			children[nc++] = node->children[dist > 0 ? 1 : 0];
+		}
+	}
 }
 
 GLuint gl_compileshaders(const char *vs_src, const char *fs_src)
@@ -365,19 +374,19 @@ GLuint gl_compileshaders(const char *vs_src, const char *fs_src)
 }
 
 
-void gl_free(const bsp_t *bsp)
+void r_free(rctx_t *r, const bsp_t *bsp)
 {
-	free(s_gl.vtxlookup);
-	free(s_gl.idx);
-	glDeleteBuffers(1, &s_gl.vbo);
-	glDeleteBuffers(1, &s_gl.ibo);
-	glDeleteVertexArrays(1, &s_gl.vao);
-	glDeleteTextures(bsp->miphdr->nummiptex, s_gl.textures);
-	glDeleteProgram(s_gl.shader);
+	free(r->vtxlookup);
+	free(r->idx);
+	glDeleteBuffers(1, &r->vbo);
+	glDeleteBuffers(1, &r->ibo);
+	glDeleteVertexArrays(1, &r->vao);
+	glDeleteTextures(bsp->miphdr->nummiptex, r->textures);
+	glDeleteProgram(r->shader);
 }
 
 
-bool gl_init(const bsp_t *bsp, const lightmap_t *lm)
+bool r_init(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm)
 {
 	static const char *vs_src =
 		"#version 330 core\n"
@@ -412,44 +421,44 @@ bool gl_init(const bsp_t *bsp, const lightmap_t *lm)
 		"FragColor = mix(tx_color, tx_color * lm_color, do_lm);\n"
 		"}";
 	
-	s_gl.shader = gl_compileshaders(vs_src, fs_src);
-	if(s_gl.shader == 0) {
+	r->shader = gl_compileshaders(vs_src, fs_src);
+	if(r->shader == 0) {
 		goto bad;
 	}
 
-	glUseProgram(s_gl.shader);
-	s_gl.u_mvp = glGetUniformLocation(s_gl.shader, "mvp");
-	GLuint u_texture = glGetUniformLocation(s_gl.shader, "u_texture");
-	GLuint u_lightmap = glGetUniformLocation(s_gl.shader, "u_lightmap");
+	glUseProgram(r->shader);
+	r->u_mvp = glGetUniformLocation(r->shader, "mvp");
+	GLuint u_texture = glGetUniformLocation(r->shader, "u_texture");
+	GLuint u_lightmap = glGetUniformLocation(r->shader, "u_lightmap");
 	
 	glUniform1i(u_texture, 0);
 	glUniform1i(u_lightmap, 1);
 
-	glGenBuffers(1, &s_gl.vbo);
-	glGenBuffers(1, &s_gl.ibo);
-	glGenVertexArrays(1, &s_gl.vao);
+	glGenBuffers(1, &r->vbo);
+	glGenBuffers(1, &r->ibo);
+	glGenVertexArrays(1, &r->vao);
 
-	glBindVertexArray(s_gl.vao);
-	glBindBuffer(GL_ARRAY_BUFFER, s_gl.vbo);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, x));
+	glBindVertexArray(r->vao);
+	glBindBuffer(GL_ARRAY_BUFFER, r->vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(rvtx_t), (void *)offsetof(rvtx_t, x));
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, s));
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(rvtx_t), (void *)offsetof(rvtx_t, s));
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(glvertex_t), (void *)offsetof(glvertex_t, ls));
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(rvtx_t), (void *)offsetof(rvtx_t, ls));
 	glEnableVertexAttribArray(2);
 
-	s_gl.idx = malloc(bsp->numvertices * sizeof(int32_t));
+	r->idx = malloc(bsp->numvertices * sizeof(int32_t));
 
-	if(!gl_loadtextures(bsp)) {
+	if(!r_loadtextures(r, bsp)) {
 		goto bad;
 	}
 	
-	if(!gl_setupvertices(bsp, lm)) {
+	if(!r_setupvertices(r, bsp, lm)) {
 		goto bad;
 	}
 	
 	return true;
 bad:
-	gl_free(bsp);
+	r_free(r, bsp);
 	return false;
 }

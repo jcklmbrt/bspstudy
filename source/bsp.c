@@ -118,12 +118,9 @@ void bsp_free(bsp_t *bsp)
 	if(bsp == NULL) {
 		return;
 	}
-	
 	for(int i = 0; i < HEADER_LUMPS; i++) {
 		free(bsp->lumps[i]);
 	}
-
-	free(bsp);
 }
 
 
@@ -132,27 +129,26 @@ const char *bsp_wadname(const bsp_t *bsp)
 	const char *wadname = NULL;
 	for(int i = 0; i < bsp->numentities; i++) {
 		const char *classname = entgets(&bsp->entities[i], "classname");
+		if(classname == NULL) {
+			continue;
+		}
 		if(!strncmp(classname, "worldspawn", EPAIR_MAX_KEY)) {
 			wadname = entgets(&bsp->entities[i], "wad");
 		}
 	}
-
 	if(wadname == NULL) {
 		return NULL;
 	}
-
 	const char *end = wadname;
 	while(*end != '\0') {
 		end++;
 	}
-
 	for(; end != wadname; end--) {
 		if(*end == '\\' || *end =='/') {
 			wadname = end + 1;
 			break;
 		}
 	}
-
 	return wadname;
 }
 
@@ -217,17 +213,8 @@ void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *out)
 }
 
 
-bsp_t *bsp_open(const char *filename)
+bool bsp_open(bsp_t *bsp, const char *filename)
 {
-	bsp_t *bsp = NULL;
-	bsp = calloc(1, sizeof(bsp_t));
-
-	if(bsp == NULL) {
-		return NULL;
-	}
-	
-	memset(bsp, 0, sizeof(bsp_t));
-
 	FILE *fp = fopen(filename, "rb");
 	if(fp == NULL) {
 		fprintf(stderr, "%s: failed to open file\n", filename);
@@ -254,13 +241,11 @@ bsp_t *bsp_open(const char *filename)
 	bsp->entities = entities;
 	bsp->numentities = numentities;
 
-	return bsp;
+	return true;
 bad:		
 	if(fp != NULL) {
 		fclose(fp);
 	}
-
 	bsp_free(bsp);
-
-	return NULL;
+	return false;
 }

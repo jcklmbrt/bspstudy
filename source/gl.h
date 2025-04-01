@@ -12,11 +12,32 @@
 
 typedef struct lightmap_s lightmap_t;
 
-bool gl_init(const bsp_t *bsp, const lightmap_t *lm);
-void gl_free(const bsp_t *bsp);
-size_t gl_renderfaces(const bsp_t *bsp, const cam_t *cam);
-void gl_onresize(float w, float h);
+typedef struct {
+	// gl objects
+	GLuint shader;
+	GLuint vbo;
+	GLuint ibo;
+	GLuint vao;
+	// uniforms
+	GLint u_mvp;
+	// offset into the vertex buffer for each face
+	// size will be dface_t::numedges
+	int32_t *vtxlookup;
+	// array of textures
+	// index will be mapped to texinfo_t::miptex
+	GLuint *textures;
+	// 
+	GLuint *idx;
+} rctx_t;
+
+
 GLuint gl_compileshaders(const char *vs_src, const char *fs_src);
-bool gl_world2screen(const cam_t *cam, const float world[3], float w, float h, float *x, float *y);
+
+
+bool r_init(rctx_t *r, const bsp_t *bsp, const lightmap_t *lm);
+void r_free(rctx_t *r, const bsp_t *bsp);
+size_t r_world(rctx_t *r, const bsp_t *bsp, const cam_t *cam);
+void r_model(rctx_t *r, const bsp_t *bsp, const cam_t *cam, size_t index);
+
 
 #endif

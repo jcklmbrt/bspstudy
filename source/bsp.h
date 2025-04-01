@@ -2,6 +2,7 @@
 #ifndef _GOLDSRC_BSPFILE_H
 #define _GOLDSRC_BSPFILE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "wad.h"
@@ -218,9 +219,9 @@ typedef struct
 	};
 } bsp_t;
 
-bsp_t *bsp_open(const char *filename);
-const char *bsp_wadname(const bsp_t *bsp);
+bool bsp_open(bsp_t *bsp, const char *filename);
 void bsp_free(bsp_t *bsp);
+const char *bsp_wadname(const bsp_t *bsp);
 int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3]);
 void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *pvs);
 

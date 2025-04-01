@@ -25,8 +25,8 @@ enum keyflags {
 };
 
 static unsigned s_keyflags = 0;
-static cam_t cam;
-static hud_t hud;
+static cam_t cam = { 0 };
+static hud_t hud = { 0 };
 
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
@@ -92,16 +92,19 @@ int main(int argc, char **argv)
 	int status = EXIT_SUCCESS;
 
 	if(argc != 2) {
-		fputs("Usage: bspstudy [FILENAME]\n", stderr);
+		fputs("usage: bspstudy [FILENAME]\n", stderr);
 		return EXIT_FAILURE;
 	}
 	
 	const char *filename = argv[1];
+	
+	printf("reading %s:\n", filename);
 
-	printf("Reading %s:\n", filename);
-
-	bsp_t *bsp = bsp_open(filename);
-	if(bsp == NULL) {
+	bsp_t bsp = { 0 };
+	rctx_t r = { 0 };
+	lightmap_t lightmap = { 0 };
+	
+	if(!bsp_open(&bsp, filename)) {
 		goto bad;
 	}
 
@@ -115,7 +118,7 @@ int main(int argc, char **argv)
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	s_window = glfwCreateWindow(s_width, s_height, "BSP Study", NULL, NULL);
+	s_window = glfwCreateWindow(s_width, s_height, argv[0], NULL, NULL);
 	if(s_window == NULL) {
 		goto bad;
 	}
@@ -139,33 +142,32 @@ int main(int argc, char **argv)
 		goto bad;
 	}
 
-	lightmap_t lightmap;
-	if(!lm_init(bsp, &lightmap)) {
+	if(!lm_init(&bsp, &lightmap)) {
 		goto bad;
 	}
 
-	if(!cam_init(bsp, &cam)) {
+	if(!cam_init(&bsp, &cam)) {
 		goto bad;
 	}
 	
 	if(!hud_init(&hud)) {
 		goto bad;
 	}
-	
-	if(!gl_init(bsp, &lightmap)) {
+
+	if(!r_init(&r, &bsp, &lightmap)) {
 		goto bad;
 	}
 
-	int32_t *brushmodels = malloc(bsp->nummodels * sizeof(int32_t));
+	int32_t *brushmodels = malloc(bsp.nummodels * sizeof(int32_t));
 	int32_t nummodels = 0;
 
-	float *origins = malloc(sizeof(float) * bsp->numentities * 3);
+	float *origins = malloc(sizeof(float) * bsp.numentities * 3);
 
-	for(int32_t i = 0; i < bsp->numentities; i++) {
-		entgetv3(&bsp->entities[i], "origin", origins + i * 3);
-		const char *model = entgets(&bsp->entities[i], "model");
+	for(int32_t i = 0; i < bsp.numentities; i++) {
+		entgetv3(&bsp.entities[i], "origin", origins + i * 3);
+		const char *model = entgets(&bsp.entities[i], "model");
 		if(model != NULL) {
-			const char *classname = entgets(&bsp->entities[i], "classname");
+			const char *classname = entgets(&bsp.entities[i], "classname");
 			if(!strncmp(classname, "func_", 5) && model[0] == '*') {
 				brushmodels[nummodels++] = atoi(&model[1]);
 			}
@@ -180,7 +182,6 @@ int main(int argc, char **argv)
 	size_t len;
 	char buf[2048];
 
-	float zero[3] = { 0.0f, 0.0f, 0.0f };
 	// main loop
 	for(;;) {
 		dt = glfwGetTime() - time;
@@ -201,37 +202,43 @@ int main(int argc, char **argv)
 
 		if(v3norm(delta, delta)) {
 			v3scale(delta, dt * velocity, delta);
-			cam_offset(bsp, &cam, delta);
+			cam_offset(&bsp, &cam, delta);
+		}
+
+		if(cam.updated) {
+			cam_buildbitsetformodel(&bsp, &cam, 0);
 		}
 		
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		cam_offset(bsp, &cam, zero);
+		size_t nv = r_world(&r, &bsp, &cam);
 
-		size_t nv = gl_renderfaces(bsp, &cam);
+		for(int i = 0; i < nummodels; i++) {
+			r_model(&r, &bsp, &cam, brushmodels[i]);
+		}
 
 		hud_clear(&hud);
 
 		len = snprintf(buf, sizeof(buf),
 			 "%.01f Frames Per Second\n"
 			 "BSP File: %s\n"
-			       "Vertices drawn: %llu",
+			       "Vertices drawn: %lu",
 			       1.0f / dt, filename, nv);
 
 		hud_puts(&hud, 24.0f, 24.0f, buf, len);
 
-		for(int32_t i = 0; i < bsp->numentities; i++) {
-			if(!entgets(&bsp->entities[i], "origin")) {
+		for(int32_t i = 0; i < bsp.numentities; i++) {
+			if(!entgets(&bsp.entities[i], "origin")) {
 				continue;
 			}
 
-			int32_t leaf = bsp_pointinleaf(bsp, &origins[i * 3]);
+			int32_t leaf = bsp_pointinleaf(&bsp, &origins[i * 3]);
 			if(!isbitset(cam.pvs, leaf - 1)) {
 				continue;
 			}
 				
-			const char *classname = entgets(&bsp->entities[i], "classname");
+			const char *classname = entgets(&bsp.entities[i], "classname");
 
 			float x, y;
 			len = strlen(classname);
@@ -242,7 +249,7 @@ int main(int argc, char **argv)
 			w /= 2.0f;
 			h /= 2.0f;
 
-			if(gl_world2screen(&cam, &origins[i*3], s_width, s_height, &x, &y)) {
+			if(cam_world2screen(&cam, &origins[i*3], s_width, s_height, &x, &y)) {
 				hud_puts(&hud, x - w, y - h, classname, len);
 			}
 		}
@@ -267,9 +274,9 @@ bad:
 end:
 	cam_free(&cam);
 	hud_free(&hud);
-	gl_free(bsp);
+	r_free(&r, &bsp);
 	lm_free(&lightmap);
-	bsp_free(bsp);
+	bsp_free(&bsp);
 	if(s_window != NULL) {
 		glfwDestroyWindow(s_window);
 	}
