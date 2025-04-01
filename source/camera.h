@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include "bsp.h"
 
-#define CAMERA_FOV 90
+#define CAMERA_FOV M_PI_2
 
 typedef struct {
 	float origin[3];
@@ -14,7 +14,7 @@ typedef struct {
 	float proj[4][4];
 	float view[4][4];
 
-	dplane_t frustum[6];
+	float frustum[6][4];
 	
 	uint8_t *pvs;
 	// setup a pvs for each texture

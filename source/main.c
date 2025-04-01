@@ -179,6 +179,8 @@ int main(int argc, char **argv)
 
 	size_t len;
 	char buf[2048];
+
+	float zero[3] = { 0.0f, 0.0f, 0.0f };
 	// main loop
 	for(;;) {
 		dt = glfwGetTime() - time;
@@ -205,14 +207,17 @@ int main(int argc, char **argv)
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		gl_renderfaces(bsp, &cam);
+		cam_offset(bsp, &cam, zero);
+
+		size_t nv = gl_renderfaces(bsp, &cam);
 
 		hud_clear(&hud);
 
 		len = snprintf(buf, sizeof(buf),
 			 "%.01f Frames Per Second\n"
-			 "BSP File: %s",
-			 1.0f / dt, filename);
+			 "BSP File: %s\n"
+			       "Vertices drawn: %llu",
+			       1.0f / dt, filename, nv);
 
 		hud_puts(&hud, 24.0f, 24.0f, buf, len);
 

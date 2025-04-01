@@ -168,6 +168,10 @@ void bsp_decompressvis(const bsp_t *bsp, const uint8_t *in, uint8_t *decompresse
 			in++;
 			for(int32_t i = 0; i < *in; i++) {
 				*out++ = 0;
+				if(out - decompressed >= row) {
+					// bad rle?
+					return;
+				}
 			}
 		}
 		in++;

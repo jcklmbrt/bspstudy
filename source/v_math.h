@@ -209,6 +209,19 @@ M_INL void m4ortho2d(float left, float right, float bottom, float top, float m[4
 	m[3][3] = 1.0f;
 }
 
+M_INL void m4transpose(const float in[4][4], float out[4][4])
+{
+	out[0][0] = in[0][0];
+	out[0][1] = in[1][0];
+	out[0][2] = in[2][0];
+	out[1][0] = in[0][1];
+	out[1][1] = in[1][1];
+	out[1][2] = in[2][1];
+	out[2][0] = in[0][2];
+	out[2][1] = in[1][2];
+	out[2][2] = in[2][2];
+}
+
 M_INL void m4mult(const float a[4][4], const float b[4][4], float out[4][4])
 {
 	float tmp[4][4];

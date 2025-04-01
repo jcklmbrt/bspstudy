@@ -269,7 +269,7 @@ static bool gl_setupvertices(const bsp_t *bsp, const lightmap_t *lm)
 	return true;
 }
 
-void gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
+size_t gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
 {
 	glEnable(GL_TEXTURE_2D);
 	glEnable(GL_DEPTH_TEST);
@@ -281,6 +281,8 @@ void gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
 	float mvp[4][4];
 	m4mult(cam->proj, cam->view, mvp);
 
+	size_t size = 0;
+	
 	glUseProgram(s_gl.shader);
 	glUniformMatrix4fv(s_gl.u_mvp, 1, GL_FALSE, (const GLfloat *)mvp);
 
@@ -311,7 +313,10 @@ void gl_renderfaces(const bsp_t *bsp, const cam_t *cam)
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s_gl.ibo);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, s_gl.ni * sizeof(GLuint), s_gl.idx, GL_STATIC_DRAW);
 		glDrawElements(GL_TRIANGLES, s_gl.ni, GL_UNSIGNED_INT, 0);
+		size += s_gl.ni;
 	}
+
+	return size;
 }
 
 GLuint gl_compileshaders(const char *vs_src, const char *fs_src)
