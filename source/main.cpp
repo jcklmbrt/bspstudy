@@ -1,15 +1,14 @@
-#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "gl.h"
-#include "bsp.h"
-#include "hud.h"
-#include "v_math.h"
-#include "entity.h"
-#include "camera.h"
-#include "lightmap.h"
+#include "render.hpp"
+#include "bsp.hpp"
+#include "glm/geometric.hpp"
+#include "hud.hpp"
+#include "entity.hpp"
+#include "camera.hpp"
+#include "lightmap.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -25,8 +24,8 @@ enum keyflags {
 };
 
 static unsigned s_keyflags = 0;
-static cam_t cam = { 0 };
-static hud_t hud = { 0 };
+static cam_t cam;
+static hud_t hud;
 
 static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
@@ -40,9 +39,9 @@ static void framebuffer_size_callback(GLFWwindow *window, int width, int height)
 	float w = (float)width;
 	float h = (float)height;
 	// setup 3d perspective projection
-	cam_onresize(&cam, w, h);
+	cam.onresize(w, h);
 	// setup 2d ortho projection
-	hud_onresize(&hud, w, h);
+	hud.onresize(w, h);
 }
 
 
@@ -84,7 +83,7 @@ static void mouse_callback(GLFWwindow *window, double x, double y)
 	xoffset *= sensitivity;
 	yoffset *= sensitivity;
 
-	cam_rotate(&cam, xoffset, yoffset);
+	cam.rotate(xoffset, yoffset);
 }
 
 int main(int argc, char **argv)
@@ -100,18 +99,18 @@ int main(int argc, char **argv)
 	
 	printf("reading %s:\n", filename);
 
-	bsp_t bsp = { 0 };
-	rctx_t r = { 0 };
-	lightmap_t lightmap = { 0 };
+	bsp_t bsp;
+	render_t r;
+	lightmap_t lightmap;
 	
-	if(!bsp_open(&bsp, filename)) {
-		goto bad;
+	if(!bsp.open(filename)) {
+		return EXIT_FAILURE;
 	}
 
 	fflush(stdout);
 
 	if(glfwInit() != GLFW_TRUE) {
-		goto bad;
+		return EXIT_FAILURE;
 	}
 
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -120,7 +119,7 @@ int main(int argc, char **argv)
 
 	s_window = glfwCreateWindow(s_width, s_height, argv[0], NULL, NULL);
 	if(s_window == NULL) {
-		goto bad;
+		return EXIT_FAILURE;
 	}
 
 	glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -139,37 +138,43 @@ int main(int argc, char **argv)
 	glfwSwapInterval(0);
 	
 	if(version == 0) {
-		goto bad;
+		return EXIT_FAILURE;
 	}
 
-	if(!lm_init(&bsp, &lightmap)) {
-		goto bad;
+	if(!lightmap.init(bsp)) {
+		return EXIT_FAILURE;
 	}
 
-	if(!cam_init(&bsp, &cam)) {
-		goto bad;
+	if(!cam.init(bsp)) {
+		return EXIT_FAILURE;
 	}
 	
-	if(!hud_init(&hud)) {
-		goto bad;
+	if(!hud.init()) {
+		return EXIT_FAILURE;
 	}
 
-	if(!r_init(&r, &bsp, &lightmap)) {
-		goto bad;
+	if(!r.init(bsp, lightmap)) {
+		return EXIT_FAILURE;
 	}
 
-	int32_t *brushmodels = malloc(bsp.nummodels * sizeof(int32_t));
+	int32_t *brushmodels = new int32_t[bsp.nummodels];
 	int32_t nummodels = 0;
 
-	float *origins = malloc(sizeof(float) * bsp.numentities * 3);
-
+	glm::vec3 *origins = new glm::vec3[bsp.numentities];
 	for(int32_t i = 0; i < bsp.numentities; i++) {
-		entgetv3(&bsp.entities[i], "origin", origins + i * 3);
-		const char *model = entgets(&bsp.entities[i], "model");
+		bsp.entities[i].get("origin", origins[i]);
+		const char *model = bsp.entities[i].get("model");
 		if(model != NULL) {
-			const char *classname = entgets(&bsp.entities[i], "classname");
+			const char *classname = bsp.entities[i].get("classname");
 			if(!strncmp(classname, "func_", 5) && model[0] == '*') {
-				brushmodels[nummodels++] = atoi(&model[1]);
+				int32_t index = atoi(&model[1]);
+				if(index > 0 && index < bsp.nummodels) {
+					brushmodels[nummodels++] = index;
+					dmodel_t *mdl = &bsp.models[index];
+					for(int j = 0; j < 3; j++) {
+						mdl->origin[j] = origins[i][j];
+					}
+				}
 			}
 		}
 	}
@@ -183,100 +188,90 @@ int main(int argc, char **argv)
 	char buf[2048];
 
 	// main loop
-	for(;;) {
+	while(!glfwWindowShouldClose(s_window)) {
+		
 		dt = glfwGetTime() - time;
 		time = glfwGetTime();
 
-		float forward[3];
-		float side[3];
+		float cp = cos(cam.m_pitch);
+		float sp = sin(cam.m_pitch);
+		float cy = cos(cam.m_yaw);
+		float sy = sin(cam.m_yaw);
 
-		v3angles(cam.pitch, cam.yaw, forward, side, NULL);
+		glm::vec3 forward = { cp * cy, cp * sy, -sp };
+		glm::vec3 side = { sy, -cy, 0.0f };
 
 		const float velocity = 1000.0f;
 
-		float delta[3] = { 0.0f, 0.0f, 0.0f };
-		if(s_keyflags & INPUT_UP) v3add(delta, forward, delta);
-		if(s_keyflags & INPUT_DOWN) v3sub(delta, forward, delta);
-		if(s_keyflags & INPUT_LEFT) v3sub(delta, side, delta);
-		if(s_keyflags & INPUT_RIGHT) v3add(delta, side, delta);
+		glm::vec3 delta = { 0.0f, 0.0f, 0.0f };
+		if(s_keyflags & INPUT_UP) delta += forward;
+		if(s_keyflags & INPUT_DOWN) delta -= forward;
+		if(s_keyflags & INPUT_LEFT) delta -= side;
+		if(s_keyflags & INPUT_RIGHT) delta += side;
 
-		if(v3norm(delta, delta)) {
-			v3scale(delta, dt * velocity, delta);
-			cam_offset(&bsp, &cam, delta);
+		if(s_keyflags != 0) {
+			delta = normalize(delta);
+			delta *= dt * velocity;
+			cam.offset(bsp, delta);
 		}
-
-		if(cam.updated) {
-			cam_buildbitsetformodel(&bsp, &cam, 0);
+		
+		if(cam.m_updated) {
+			cam.buildbitsetformodel(bsp, 0);
 		}
 		
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		int32_t nv = r_world(&r, &bsp, &cam);
+		int32_t nv = r.drawworld(bsp, cam);
 
 		for(int i = 0; i < nummodels; i++) {
-			r_model(&r, &bsp, &cam, brushmodels[i]);
+			r.drawmodel(bsp, cam, brushmodels[i]);
 		}
 
-		hud_clear(&hud);
+		hud.clear();
 
 		len = snprintf(buf, sizeof(buf),
 			 "%.01f Frames Per Second\n"
 			 "BSP File: %s\n"
-			       "Vertices drawn: %d",
+			       "Faces drawn: %d",
 			       1.0f / dt, filename, nv);
 
-		hud_puts(&hud, 24.0f, 24.0f, buf, len);
+		hud.puts(24.0f, 24.0f, buf, len);
 
 		for(int32_t i = 0; i < bsp.numentities; i++) {
-			if(!entgets(&bsp.entities[i], "origin")) {
+			if(!bsp.entities[i].get("origin")) {
 				continue;
 			}
 
-			int32_t leaf = bsp_pointinleaf(&bsp, &origins[i * 3]);
-			if(!isbitset(cam.pvs, leaf - 1)) {
+			int32_t leaf = bsp.pointinleaf(origins[i]);
+			if(!isbitset(cam.m_pvs, leaf - 1)) {
 				continue;
 			}
 				
-			const char *classname = entgets(&bsp.entities[i], "classname");
+			const char *classname = bsp.entities[i].get("classname");
 
 			float x, y;
 			len = strlen(classname);
 
 			float w, h;
-			hud_strsize(&hud, &w, &h, classname, len);
+			hud.strsize(w, h, classname, len);
 
 			w /= 2.0f;
 			h /= 2.0f;
 
-			if(cam_world2screen(&cam, &origins[i*3], s_width, s_height, &x, &y)) {
-				hud_puts(&hud, x - w, y - h, classname, len);
+			if(cam.world2screen(origins[i], s_width, s_height, x, y)) {
+				hud.puts(x - w, y - h, classname, len);
 			}
 		}
 		
-		hud_drawelems(&hud);
+		hud.drawelems();
 		
 		glfwSwapBuffers(s_window);
 		glfwPollEvents();
+	}
 
-		if(glfwWindowShouldClose(s_window)) {
-			goto end;
-		}
-	}
-bad:
-	status = EXIT_FAILURE;
-	const char *msg = NULL;
-	glfwGetError(&msg);
-	if(msg != NULL) {
-		fprintf(stderr, "%s", msg);
-	}
-	/* fallthrough */
-end:
-	cam_free(&cam);
-	hud_free(&hud);
-	r_free(&r, &bsp);
-	lm_free(&lightmap);
-	bsp_free(&bsp);
+	delete[] origins;
+	delete[] brushmodels;
 	if(s_window != NULL) {
 		glfwDestroyWindow(s_window);
 	}

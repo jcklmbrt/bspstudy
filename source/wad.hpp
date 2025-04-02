@@ -13,27 +13,27 @@ enum {
 	TYP_MIPTEX = 0x43
 };
 
-typedef struct miptexhdr {
+struct dmiptexlump_t {
 	int32_t nummiptex;
-	int32_t dataofs[];
-} dmiptexlump_t;
+	int32_t dataofs[4]; /* flexible array member */
+};
 
-#define MAXTEXTURENAME 16
-#define MIPLEVELS       4
-typedef struct miptex_s {
+constexpr int MAXTEXTURENAME = 16;
+constexpr int MIPLEVELS = 4;
+struct miptex_t {
 	char name[MAXTEXTURENAME];
 	uint32_t width;
 	uint32_t height;
 	uint32_t offsets[MIPLEVELS];
-} miptex_t;
+};
 
-typedef struct {
+struct wadinfo_t {
 	uint8_t id[4];
 	int32_t numlumps;
 	int32_t infotableofs;
-} wadinfo_t;
+};
 
-typedef struct {
+struct lumpinfo_t {
 	int32_t filepos;
 	int32_t disksize;
 	int32_t size;
@@ -41,18 +41,18 @@ typedef struct {
 	uint8_t compression;
 	uint16_t padding;
 	char name[MAXTEXTURENAME];
-} lumpinfo_t;
+};
 
-typedef struct {
-	FILE *fp;
-	lumpinfo_t *dirs;
-	miptex_t **cache;
+struct wad_t {
+	bool open(const char *filename);
+	~wad_t();
+	miptex_t *getmiptex(const char *name) const;
+
+	FILE *fp = nullptr;
+	lumpinfo_t *dirs = nullptr;
+	miptex_t **cache = nullptr;
 	int32_t numdirs;
-} wad_t;
-
-wad_t *wad_open(const char *filename);
-miptex_t *wad_getmiptex(const wad_t *wad, const char *name);
-void wad_close(wad_t *wad);
+};
 
 #endif
 

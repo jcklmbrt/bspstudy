@@ -1,15 +1,17 @@
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <cstdlib>
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+#define _USE_MATH_DEFINES
+#include <math.h>
 
-#include "v_math.h"
-#include "entity.h"
-#include "bsp.h"
-#include "wad.h"
+#include "entity.hpp"
+#include "bsp.hpp"
+#include "wad.hpp"
 
 
-static const char *bsp_lumpname(int lump_num)
+static const char *lumpname(int lump_num)
 {
 	switch(lump_num) {
 	case LUMP_ENTITIES:     return "LUMP_ENTITIES";
@@ -33,7 +35,7 @@ static const char *bsp_lumpname(int lump_num)
 }
 
 
-static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcount)
+static void *readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcount)
 {
 	static int32_t maxsizes[HEADER_LUMPS] = {
 		/* LUMP_ENTITIES     */ MAX_MAP_ENTSTRING,
@@ -79,31 +81,31 @@ static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcou
 	
 	if(length % elemsize != 0) {
 		fprintf(stderr, "loadlump %s: bad length: %d\n",
-			bsp_lumpname(lumpid), length);
+			lumpname(lumpid), length);
 		return NULL;
 	}
 
 	if(length / elemsize > maxsize) {
 		fprintf(stderr, "waring: lump %s too large (%d > %d)\n",
-			bsp_lumpname(lumpid), length / elemsize, maxsize);
+			lumpname(lumpid), length / elemsize, maxsize);
 	}
 	
 	if((data = malloc(length)) == NULL) {
 		fprintf(stderr, "loadlump %s: bad alloc\n",
-			bsp_lumpname(lumpid));
+			lumpname(lumpid));
 		return NULL;
 	}
 
 	if(fseek(fp, offset, SEEK_SET) != 0) {
 		fprintf(stderr, "loadlump %s: bad offset/seek %d\n",
-			bsp_lumpname(lumpid), offset);
+			lumpname(lumpid), offset);
 		free(data);
 		return NULL;
 	};
 
 	if(fread(data, 1, length, fp) != (size_t)length) {
 		fprintf(stderr, "loadlump %s: bad read\n",
-			bsp_lumpname(lumpid));
+			lumpname(lumpid));
 		free(data);
 		return NULL;
 	};
@@ -113,24 +115,26 @@ static void *bsp_readlump(FILE *fp, dheader_t *hdr, int lumpid, int32_t *elemcou
 }
 
 
-void bsp_free(bsp_t *bsp)
+bsp_t::~bsp_t()
 {
+	void **lumps = &datastart;
+
 	for(int i = 0; i < HEADER_LUMPS; i++) {
-		free(bsp->lumps[i]);
+		free(lumps[i]);
 	}
 }
 
 
-const char *bsp_wadname(const bsp_t *bsp)
+const char *bsp_t::wadname() const
 {
 	const char *wadname = NULL;
-	for(int i = 0; i < bsp->numentities; i++) {
-		const char *classname = entgets(&bsp->entities[i], "classname");
+	for(int i = 0; i < numentities; i++) {
+		const char *classname = entities[i].get("classname");
 		if(classname == NULL) {
 			continue;
 		}
 		if(!strncmp(classname, "worldspawn", EPAIR_MAX_KEY)) {
-			wadname = entgets(&bsp->entities[i], "wad");
+			wadname = entities[i].get("wad");
 		}
 	}
 	if(wadname == NULL) {
@@ -150,9 +154,9 @@ const char *bsp_wadname(const bsp_t *bsp)
 }
 
 
-void bsp_decompressvis(const bsp_t *bsp, const uint8_t *in, uint8_t *decompressed)
+static void decompressvis(const bsp_t &bsp, const uint8_t *in, uint8_t *decompressed)
 {
-	int32_t row = (bsp->numleaves + 7) >> 3;
+	int32_t row = (bsp.numleaves + 7) >> 3;
 	uint8_t *out = decompressed;
 	while(out - decompressed < row) {
 		if(*in) {
@@ -172,21 +176,21 @@ void bsp_decompressvis(const bsp_t *bsp, const uint8_t *in, uint8_t *decompresse
 }
 
 
-int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
+int32_t bsp_t::pointinleaf(const glm::vec3 &origin) const
 {
-	dmodel_t *mdl = &bsp->models[0];
+	dmodel_t *mdl = &models[0];
 	int16_t index = mdl->headnode[0];
 
 	while(index >= 0) {
-		dnode_t *node = &bsp->nodes[index];
-		dplane_t *plane = &bsp->planes[node->plane];
+		dnode_t *node = &nodes[index];
+		dplane_t *plane = &planes[node->plane];
 		float dist = 0;
 		switch(plane->type) {
 			case PLANE_X: dist = origin[0] - plane->dist; break;
 			case PLANE_Y: dist = origin[1] - plane->dist; break;
 			case PLANE_Z: dist = origin[2] - plane->dist; break;
 		default:
-			dist = v3dot(plane->normal, origin) - plane->dist;
+			dist = glm::dot(plane->normal, origin) - plane->dist;
 			break;
 		}
 		index = node->children[dist > 0 ? 0 : 1];
@@ -195,54 +199,75 @@ int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3])
 }
 
 
-void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *out)
+void bsp_t::pvsfororigin(const glm::vec3 &origin, uint8_t *out) const
 {
-	int32_t i = bsp_pointinleaf(bsp, origin);
-	dleaf_t *leaf = &bsp->leaves[i];
+	int32_t i = pointinleaf(origin);
+	dleaf_t *leaf = &leaves[i];
 
-	memset(out, 255, (bsp->numleaves + 7) / 8);
+	memset(out, 255, (numleaves + 7) / 8);
 
 	if(leaf->vis == -1) {
 		return;
 	}
 
-	bsp_decompressvis(bsp, &bsp->vis[leaf->vis], out);
+	decompressvis(*this, &vis[leaf->vis], out);
 }
 
 
-bool bsp_open(bsp_t *bsp, const char *filename)
+bool bsp_t::getspawn(glm::vec3 &origin, float &yaw) const
+{
+	yaw = 0;
+	origin[0] = origin[1] = origin[2] = 0.0f;
+	
+	for(int32_t i = 0; i < numentities; i++) {
+		const char *classname = entities[i].get("classname");
+		if(classname == NULL) {
+			continue;
+		}
+		// get spawn point
+		if(!strncmp(classname, "info_player_start", EPAIR_MAX_KEY)) {
+			entities[i].get("origin", origin);
+			entities[i].get("angle", yaw);
+
+			yaw = (yaw * (M_PI_2 / 180.0f));
+			return true;
+		}
+	}
+	return false;
+}
+
+
+bool bsp_t::open(const char *filename)
 {
 	FILE *fp = fopen(filename, "rb");
+	
 	if(fp == NULL) {
 		fprintf(stderr, "%s: failed to open file\n", filename);
-		goto bad;
+		return false;
 	}
 
 	dheader_t hdr;
 	fseek(fp, 0, SEEK_SET);
 	fread(&hdr, 1, sizeof(dheader_t), fp);
+
+	void **lumps = &datastart;
+	int32_t *lumpsize = &sizestart;
 	
 	for(int i = 0; i < HEADER_LUMPS; i++) {
-		bsp->lumps[i] = bsp_readlump(fp, &hdr, i, &bsp->lumpsize[i]);
-		if(bsp->lumps[i] == NULL) {
-			goto bad;
+		lumps[i] = readlump(fp, &hdr, i, &lumpsize[i]);
+		if(lumps[i] == NULL) {
+			fclose(fp);
+			return false;
 		}
 	}
 
-	entity_t *entities = NULL;
-	entities = calloc(MAX_MAP_ENTITIES, sizeof(entity_t));
+	entity_t *p_entities = NULL;
+	p_entities = new entity_t[MAX_MAP_ENTITIES];
 
-	int32_t numentities = entparse(bsp->entdata, bsp->entdatasize, entities);
-	
-	free(bsp->entdata);
-	bsp->entities = entities;
-	bsp->numentities = numentities;
+	numentities = entity_t::parse(entdata, entdatasize, p_entities);
+
+	delete[] entdata;
+	entities = p_entities;
 
 	return true;
-bad:		
-	if(fp != NULL) {
-		fclose(fp);
-	}
-	bsp_free(bsp);
-	return false;
 }

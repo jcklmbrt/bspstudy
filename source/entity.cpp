@@ -1,9 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "bsp.h"
-#include "entity.h"
-
+#include "bsp.hpp"
+#include "entity.hpp"
 
 static unsigned char getkeylen(char *ep) { return ep[0]; }
 static unsigned short getvallen(char *ep) { return ep[1] << 8 | ep[2]; }
@@ -12,12 +11,12 @@ static char *getval(char *ep)  { return ep + 3 + getkeylen(ep); }
 static char *getnext(char *ep) { return getval(ep) + getvallen(ep); }
 
 
-const char *entputs(const entity_t *e)
+const char *entity_t::puts() const
 {
 	const char *classname = NULL;
 	static char lines[EPAIR_MAX_VALUE][128];
 	int i = 0;
-	for(char *ep = e->epairs; ep - e->epairs < e->size; ep = getnext(ep)) {
+	for(char *ep = epairs; ep - epairs < size; ep = getnext(ep)) {
 		// assuming 1st key will be classname
 		if(!strncmp(getkey(ep), "classname", getkeylen(ep))) {
 			classname = getval(ep);
@@ -35,9 +34,9 @@ const char *entputs(const entity_t *e)
 }
 
 
-const char *entgets(const entity_t *e, const char *key)
+const char *entity_t::get(const char *key) const
 {
-	for(char *ep = e->epairs; ep - e->epairs < e->size; ep = getnext(ep)) {
+	for(char *ep = epairs; ep - epairs < size; ep = getnext(ep)) {
 		if(!strncmp(getkey(ep), key, getkeylen(ep))) {
 			return getval(ep);
 		}
@@ -46,19 +45,20 @@ const char *entgets(const entity_t *e, const char *key)
 }
 
 
-const char *entgetf(const entity_t *e, const char *key, float *out)
+const char *entity_t::get(const char *key, float &out) const
 {
-	const char *value = entgets(e, key);
+	const char *value = get(key);
 	if(value != NULL) {
-		*out = atof(value);
+		out = atof(value);
 	}
-	return value;
+	return value
+;
 }
 
 
-const char *entgetv3(const entity_t *e, const char *key, float out[3])
+const char *entity_t::get(const char *key, glm::vec3 &out) const
 {
-	const char *value = entgets(e, key);
+	const char *value = get(key);
 	if(value != NULL) {
 		if(sscanf(value, "%f %f %f", &out[0], &out[1], &out[2]) != 3) {
 			return NULL;
@@ -135,7 +135,7 @@ static int elex(const char **p_start, const char *end, char token[EPAIR_MAX_VALU
 }
 
 
-int entparse(const char *entdata, int32_t entdatasize, entity_t *entities)
+int entity_t::parse(const char *entdata, int32_t entdatasize, entity_t *entities)
 {
 	/* based upon the sample bsp file's entity data,
 	   let's construct a formal grammar.
@@ -179,7 +179,7 @@ int entparse(const char *entdata, int32_t entdatasize, entity_t *entities)
 
 			if(tokid == ENTLEX_RBRACE) {
 				/* ensure entity has mandatory key "classname" */
-				if(entgets(&entities[numentities], "classname") == NULL) {
+				if(entities[numentities].get("classname") == NULL) {
 					fprintf(stderr, "entparse: bad entity, no classname\n");
 				}
 				if(numentities++ > MAX_MAP_ENTITIES) {
@@ -209,9 +209,9 @@ int entparse(const char *entdata, int32_t entdatasize, entity_t *entities)
 			epairsize += keylen + vallen + 3;
 
 			if(epairs == NULL) {
-				epairs = malloc(epairsize);
+				epairs = (char *)malloc(epairsize);
 			} else {
-				epairs = realloc(epairs, epairsize);
+				epairs = (char *)realloc(epairs, epairsize);
 			}
 
 			if(epairs == NULL) {

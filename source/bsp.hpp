@@ -5,8 +5,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "wad.h"
-#include "entity.h"
+#include "wad.hpp"
+#include "entity.hpp"
 
 enum {
 	LUMP_ENTITIES     = 0,
@@ -27,16 +27,16 @@ enum {
 	HEADER_LUMPS      = 15
 };
 
-typedef struct {
+struct lump_t {
 	int32_t offset;
 	int32_t length;
-} lump_t;
+};
 
 
-typedef struct {
+struct dheader_t {
 	int32_t version;
 	lump_t lump[HEADER_LUMPS];
-} dheader_t;
+};
 
 
 enum {
@@ -69,7 +69,7 @@ enum {
 };
 
 
-typedef struct {
+struct dmodel_t {
 	float mins[3];
 	float maxs[3];
 	float origin[3];
@@ -77,7 +77,7 @@ typedef struct {
 	int32_t visleafs;
 	int32_t firstface;
 	int32_t numfaces;
-} dmodel_t;
+};
 
 
 enum {
@@ -90,15 +90,15 @@ enum {
 };
 
 
-typedef struct {
-	float normal[3];
+struct dplane_t {
+	glm::vec3 normal;
 	float dist;
 	int32_t type;
-} dplane_t;
+};
 
 
 #define MAXLIGHTMAPS 4
-typedef struct {
+struct dface_t {
 	int16_t plane;
 	int16_t side;
 	int32_t firstedge;
@@ -106,23 +106,23 @@ typedef struct {
 	int16_t texinfo;
 	uint8_t styles[MAXLIGHTMAPS];
 	int32_t lightmapoffset;
-} dface_t;
+};
 
 
-typedef struct texinfo_s {
+struct texinfo_t {
 	float vecs[2][4]; /* [s/t][xyz offset] */
 	int32_t miptex;
 	int32_t flags;
-} texinfo_t;
+};
 
-typedef struct {
+struct dnode_t {
 	uint32_t plane;
 	int16_t children[2];
 	int16_t mins[3];
 	int16_t maxs[3];
 	uint16_t firstface;
 	uint16_t numfaces;
-} dnode_t;
+};
 
 enum {
 	CONTENTS_EMPTY = -1,
@@ -142,7 +142,7 @@ enum {
 	CONTENTS_TRANSLUCENT = -15
 };
 
-typedef struct {
+struct dleaf_t {
 	int32_t contents;
 	int32_t vis;
 	int16_t mins[3];
@@ -150,80 +150,76 @@ typedef struct {
 	uint16_t firstmarksurface;
 	uint16_t nummarksurfaces;
 	uint8_t ambientlevels[4];
-} dleaf_t;
+};
 
-typedef struct {
+struct dclipnode_t {
 	int32_t plane;
 	int16_t children[2];
-} dclipnode_t;
+};
 
-typedef struct bsp_vertex {
+struct dvertex_t {
 	float point[3];
-} dvertex_t;
+};
 
-typedef struct {
+struct dedge_t {
 	uint16_t v[2];
-} dedge_t;
+};
 
-typedef struct
+struct bsp_t
 {
+public:
+	bool open(const char *filename);
+	~bsp_t();
+
+	const char *wadname() const;
+	int32_t pointinleaf(const glm::vec3 &point) const;
+	void pvsfororigin(const glm::vec3 &point, uint8_t *pvs) const;
+	bool getspawn(glm::vec3 &origin, float &yaw) const;
+
+	/* pointers to lumps */
 	union {
-		struct {
-			union {
-				char *entdata;
-				entity_t *entities;
-			};
-			dplane_t *planes;
-			union {
-				uint8_t *textures;
-				dmiptexlump_t *miphdr;
-			};
-			dvertex_t *vertices;
-			uint8_t *vis;
-			dnode_t *nodes;
-			texinfo_t *texinfo;
-			dface_t *faces;
-			uint8_t *lighting;
-			dclipnode_t *clipnodes;
-			dleaf_t *leaves;
-			uint16_t *marksurfaces;
-			dedge_t *edges;
-			int32_t *surfedges;
-			dmodel_t *models;
-		};
-		void *lumps[HEADER_LUMPS];
+		void *datastart;
+		char *entdata;
+		entity_t *entities;
 	};
-
+	dplane_t *planes;
 	union {
-		struct {
-			union {
-				int32_t entdatasize;
-				int32_t numentities;
-			};
-			int32_t numplanes;
-			int32_t miptexsize;
-			int32_t numvertices;
-			int32_t vissize;
-			int32_t numnodes;
-			int32_t numtexinfos;
-			int32_t numfaces; 
-			int32_t lightingsize;
-			int32_t numclipnodes;
-			int32_t numleaves;
-			int32_t nummarksurfaces;
-			int32_t numedges;
-			int32_t numsurfedges;
-			int32_t nummodels;
-		};
-		int32_t lumpsize[HEADER_LUMPS];
+		uint8_t *textures;
+		dmiptexlump_t *miphdr;
 	};
-} bsp_t;
+	dvertex_t *vertices;
+	uint8_t *vis;
+	dnode_t *nodes;
+	texinfo_t *texinfo;
+	dface_t *faces;
+	uint8_t *lighting;
+	dclipnode_t *clipnodes;
+	dleaf_t *leaves;
+	uint16_t *marksurfaces;
+	dedge_t *edges;
+	int32_t *surfedges;
+	dmodel_t *models;
 
-bool bsp_open(bsp_t *bsp, const char *filename);
-void bsp_free(bsp_t *bsp);
-const char *bsp_wadname(const bsp_t *bsp);
-int32_t bsp_pointinleaf(const bsp_t *bsp, const float origin[3]);
-void bsp_pvsfororigin(const bsp_t *bsp, const float origin[3], uint8_t *pvs);
-
+	/* lump sizes */
+	union {
+		int32_t sizestart;
+		int32_t entdatasize;
+		int32_t numentities;
+	};
+	int32_t numplanes;
+	int32_t miptexsize;
+	int32_t numvertices;
+	int32_t vissize;
+	int32_t numnodes;
+	int32_t numtexinfos;
+	int32_t numfaces; 
+	int32_t lightingsize;
+	int32_t numclipnodes;
+	int32_t numleaves;
+	int32_t nummarksurfaces;
+	int32_t numedges;
+	int32_t numsurfedges;
+	int32_t nummodels;
+};
 
 #endif

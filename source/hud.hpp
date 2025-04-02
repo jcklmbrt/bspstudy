@@ -2,9 +2,13 @@
 #ifndef _HUD_H
 #define _HUD_H
 
-#include "gl.h"
 #include <limits.h>
 #include <stdbool.h>
+#include <vector>
+#include <glm/glm.hpp>
+
+#include "render.hpp"
+
 #include <stb_truetype.h>
 
 #define FONT_SIZE 12
@@ -16,13 +20,15 @@
 #define HUD_MAXVTX (1024 * 16)
 #define HUD_MAXIDX ((HUD_MAXVTX * 3) / 2)
 
-typedef struct {
+
+struct hudvtx_t {
 	float x, y;
 	float r, g, b, a;
 	float s, t;
-} hudvtx_t;
+};
 
-typedef struct {
+
+struct hud_t {
 	GLuint fontatlas;
 	stbtt_packedchar pc[FONT_RANGE];
 
@@ -31,24 +37,19 @@ typedef struct {
 	GLuint vao;
 	GLuint ibo;
 
-	float ortho[4][4];
+	glm::mat4 ortho;
 	GLuint u_ortho;
+
+	std::vector<GLuint> idx;
+	std::vector<hudvtx_t> vtx;
 	
-	GLuint *idx;
-	size_t ni;
-	
-	hudvtx_t *vtx;
-	size_t nv;
-} hud_t;
-
-
-bool hud_init(hud_t *hud);
-void hud_free(hud_t *hud);
-void hud_clear(hud_t *hud);
-void hud_drawelems(const hud_t *hud);
-void hud_onresize(hud_t *hud, float w, float h);
-void hud_strsize(hud_t *hud, float *w, float *h, const char *s, size_t len);
-int hud_puts(hud_t *hud, float x, float y, const char *s, size_t len);
-
+	bool init();
+	~hud_t();
+	void clear();
+	void drawelems();
+	void onresize(float w, float h);
+	void strsize(float &w, float &h, const char *s, size_t len) const;
+	int puts(float x, float y, const char *s, size_t len);
+};
 
 #endif
