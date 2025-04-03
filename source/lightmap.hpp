@@ -17,17 +17,18 @@ struct stbrp_rect;
 struct lmface_t {
 	// basically a stripped down version of msurface_t
 	// I think as I add more features I'm slowly going to reinvent msurface_t LOL.
-	int32_t texturemins[2];
-	int32_t extents[2];
+	glm::i32vec2 texturemins;
+	glm::i32vec2 extents;
 };
 
 struct lightmap_t {
 	bool init(const bsp_t &bsp);
 	~lightmap_t();
-
-	GLuint texture = 0;
-	stbrp_rect *rects = nullptr;
-	lmface_t *faces = nullptr;
+	void texcoords(int32_t face, float s, float t, float &lm_s, float &lm_t) const;
+private:
+	GLuint m_texture = 0;
+	stbrp_rect *m_rects = nullptr;
+	lmface_t *m_faces = nullptr;
 };
 
 

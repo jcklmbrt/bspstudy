@@ -184,11 +184,7 @@ bool render_t::setupvertices(const bsp_t &bsp, const lightmap_t &lm)
 			float lm_t = 1.0f;
 
 			if(face->lightmapoffset > 0) {
-				lm_s = (s - lm.faces[f].texturemins[0]) + lm.rects[f].x * 16.0f + 8.0f;
-				lm_t = (t - lm.faces[f].texturemins[1]) + lm.rects[f].y * 16.0f + 8.0f;
-			
-				lm_s /= LIGHTMAP_WIDTH * 16.0f;
-				lm_t /= LIGHTMAP_HEIGHT * 16.0f;
+				lm.texcoords(f, s, t, lm_s, lm_t);
 			}
 
 			s /= miptex->width;

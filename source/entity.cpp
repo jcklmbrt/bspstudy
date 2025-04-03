@@ -13,10 +13,10 @@ static char *getnext(char *ep) { return getval(ep) + getvallen(ep); }
 
 const char *entity_t::puts() const
 {
-	const char *classname = NULL;
+	const char *classname = nullptr;
 	static char lines[EPAIR_MAX_VALUE][128];
 	int i = 0;
-	for(char *ep = epairs; ep - epairs < size; ep = getnext(ep)) {
+	for(char *ep = m_epairs; ep - m_epairs < m_size; ep = getnext(ep)) {
 		// assuming 1st key will be classname
 		if(!strncmp(getkey(ep), "classname", getkeylen(ep))) {
 			classname = getval(ep);
@@ -25,30 +25,32 @@ const char *entity_t::puts() const
 		}
 	}
 
-	printf("%s:\n", classname);
-	while(i--) {
-		printf("\t%s", lines[i]);
+	if(classname != nullptr) {
+		printf("%s:\n", classname);
+		while(i--) {
+			printf("\t%s", lines[i]);
+		}
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 
 const char *entity_t::get(const char *key) const
 {
-	for(char *ep = epairs; ep - epairs < size; ep = getnext(ep)) {
+	for(char *ep = m_epairs; ep - m_epairs < m_size; ep = getnext(ep)) {
 		if(!strncmp(getkey(ep), key, getkeylen(ep))) {
 			return getval(ep);
 		}
 	}
-	return NULL;
+	return nullptr;
 }
 
 
 const char *entity_t::get(const char *key, float &out) const
 {
 	const char *value = get(key);
-	if(value != NULL) {
+	if(value != nullptr) {
 		out = atof(value);
 	}
 	return value
@@ -59,9 +61,9 @@ const char *entity_t::get(const char *key, float &out) const
 const char *entity_t::get(const char *key, glm::vec3 &out) const
 {
 	const char *value = get(key);
-	if(value != NULL) {
+	if(value != nullptr) {
 		if(sscanf(value, "%f %f %f", &out[0], &out[1], &out[2]) != 3) {
-			return NULL;
+			return nullptr;
 		};
 	}
 	return value;
@@ -154,8 +156,8 @@ int entity_t::parse(const char *entdata, int32_t entdatasize, entity_t *entities
 	char token[EPAIR_MAX_VALUE];
 	const char *end = entdata + entdatasize;
 	int numentities = 0;
-	int epairsize   = 0;
-	int old_epairsize;
+	int m_epairsize   = 0;
+	int old_m_epairsize;
 	int tokid;
 
 	char key[EPAIR_MAX_KEY];
@@ -179,15 +181,15 @@ int entity_t::parse(const char *entdata, int32_t entdatasize, entity_t *entities
 
 			if(tokid == ENTLEX_RBRACE) {
 				/* ensure entity has mandatory key "classname" */
-				if(entities[numentities].get("classname") == NULL) {
+				if(entities[numentities].get("classname") == nullptr) {
 					fprintf(stderr, "entparse: bad entity, no classname\n");
 				}
 				if(numentities++ > MAX_MAP_ENTITIES) {
 					fprintf(stderr, "entparse: too many entities\n");
 					return numentities;
 				}
-				entities[numentities].epairs = NULL;
-				epairsize = 0;
+				entities[numentities].m_epairs = nullptr;
+				m_epairsize = 0;
 				break;
 			} else if(tokid != ENTLEX_IDENT) {
 				fprintf(stderr, "entparse: %d expected identifier or }\n", tokid);
@@ -203,23 +205,23 @@ int entity_t::parse(const char *entdata, int32_t entdatasize, entity_t *entities
 
 			vallen = snprintf(value, EPAIR_MAX_VALUE, "%s", token) + 1;
 
-			char *epairs = entities[numentities].epairs;
+			char *m_epairs = entities[numentities].m_epairs;
 
-			old_epairsize = epairsize;
-			epairsize += keylen + vallen + 3;
+			old_m_epairsize = m_epairsize;
+			m_epairsize += keylen + vallen + 3;
 
-			if(epairs == NULL) {
-				epairs = (char *)malloc(epairsize);
+			if(m_epairs == nullptr) {
+				m_epairs = (char *)malloc(m_epairsize);
 			} else {
-				epairs = (char *)realloc(epairs, epairsize);
+				m_epairs = (char *)realloc(m_epairs, m_epairsize);
 			}
 
-			if(epairs == NULL) {
-				fprintf(stderr, "entparse: bad realloc: epairsize: %d\n", epairsize);
+			if(m_epairs == nullptr) {
+				fprintf(stderr, "entparse: bad realloc: m_epairsize: %d\n", m_epairsize);
 				return numentities;
 			}
 
-			char *newepair = epairs + old_epairsize;
+			char *newepair = m_epairs + old_m_epairsize;
 
 			newepair[0] = keylen;
 			newepair[1] = (vallen >> 8) & 0xFF;
@@ -228,8 +230,8 @@ int entity_t::parse(const char *entdata, int32_t entdatasize, entity_t *entities
 			memcpy(newepair + 3,          key,   keylen);
 			memcpy(newepair + 3 + keylen, value, vallen);
 
-			entities[numentities].epairs = epairs;
-			entities[numentities].size   = epairsize;
+			entities[numentities].m_epairs = m_epairs;
+			entities[numentities].m_size   = m_epairsize;
 		}
 	}
 
