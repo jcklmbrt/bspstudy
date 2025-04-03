@@ -1,6 +1,8 @@
 #ifndef _MY_GL_H
 #define _MY_GL_H
 
+#include <vector>
+
 #include <glad/gl.h>
 #include <stdbool.h>
 #include <stdint.h>
