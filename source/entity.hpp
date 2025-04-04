@@ -17,7 +17,7 @@ struct entity_t {
 
 	static int parse(const char *entdata, int32_t entdatasize, entity_t *entities);
 private:
-	ssize_t m_size = 0;
+	int32_t m_size = 0;
 	char *m_epairs = nullptr;
 };
 

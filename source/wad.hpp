@@ -2,6 +2,8 @@
 #ifndef _WADLIB_H
 #define _WADLIB_H
 
+#include <vector>
+
 #include <stdio.h>
 #include <stdint.h>
 
@@ -18,6 +20,8 @@ struct dmiptexlump_t {
 	int32_t dataofs[4]; /* flexible array member */
 };
 
+struct wad_t;
+
 constexpr int MAXTEXTURENAME = 16;
 constexpr int MIPLEVELS = 4;
 struct miptex_t {
@@ -25,7 +29,12 @@ struct miptex_t {
 	uint32_t width;
 	uint32_t height;
 	uint32_t offsets[MIPLEVELS];
+
+	bool load(const uint8_t *bytes);
+	bool load(const wad_t &wad, const char *name);
+	std::vector<uint8_t> rgba;
 };
+
 
 struct wadinfo_t {
 	uint8_t id[4];
@@ -46,11 +55,11 @@ struct lumpinfo_t {
 struct wad_t {
 	bool open(const char *filename);
 	~wad_t();
-	miptex_t *getmiptex(const char *name) const;
+	const uint8_t *getmiptexbytes(const char *name) const;
 
 	FILE *fp = nullptr;
 	lumpinfo_t *dirs = nullptr;
-	miptex_t **cache = nullptr;
+	uint8_t **cache = nullptr;
 	int32_t numdirs;
 };
 

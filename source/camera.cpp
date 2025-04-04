@@ -137,11 +137,11 @@ bool cam_t::world2screen(const glm::vec3 &world, float w, float h, float &x, flo
 
 void cam_t::buildbitsetformodel(const bsp_t &bsp, int32_t index)
 {	
-	dmodel_t *mdl = &bsp.models[index];
+	const dmodel_t *mdl = &bsp.m_models[index];
 	
-	for(int32_t i = 0; i < bsp.miphdr->nummiptex; i++) {
-		for(int32_t j = 0; j < ((bsp.numfaces + 63) / 64); j++) {
-			m_texturebits[i * ((bsp.numfaces + 63) / 64) + j] = 0ull;
+	for(size_t i = 0; i < bsp.m_mipofs.size(); i++) {
+		for(size_t j = 0; j < ((bsp.m_faces.size() + 63) / 64); j++) {
+			m_texturebits[i * ((bsp.m_faces.size() + 63) / 64) + j] = 0ull;
 		}
 	}
 
@@ -153,7 +153,7 @@ void cam_t::buildbitsetformodel(const bsp_t &bsp, int32_t index)
 	while(nc > 0) {
 		int16_t child = children[--nc];
 		if(child < 0) {
-			dleaf_t *leaf = &bsp.leaves[~child];
+			const dleaf_t *leaf = &bsp.m_leaves[~child];
 			if(!isbitset(m_pvs, (~child) - 1)) {
 				continue;
 			}
@@ -161,16 +161,16 @@ void cam_t::buildbitsetformodel(const bsp_t &bsp, int32_t index)
 				continue;
 			}
 			for(int32_t j = 0; j < leaf->nummarksurfaces; j++) {
-				int32_t f = bsp.marksurfaces[leaf->firstmarksurface + j];
-				dface_t *face = &bsp.faces[f];
-				texinfo_t *texinfo = &bsp.texinfo[face->texinfo];
+				int32_t f = bsp.m_marksurfaces[leaf->firstmarksurface + j];
+				const dface_t *face = &bsp.m_faces[f];
+				const texinfo_t *texinfo = &bsp.m_texinfo[face->texinfo];
 
-				uint64_t *bits = &m_texturebits[texinfo->miptex * ((bsp.numfaces + 63) / 64)];
+				uint64_t *bits = &m_texturebits[texinfo->miptex * ((bsp.m_faces.size() + 63) / 64)];
 				bits[f / 64] |= (1ull << ((uint64_t)f % 64));
 			}
 		} else {
-			dnode_t *node = &bsp.nodes[child];
-			dplane_t *plane = &bsp.planes[node->plane];
+			const dnode_t *node = &bsp.m_nodes[child];
+			const dplane_t *plane = &bsp.m_planes[node->plane];
 
 			if(!boxinfrustum(node->mins, node->maxs)) {
 				continue;
@@ -197,24 +197,24 @@ void cam_t::buildbitsetformodel(const bsp_t &bsp, int32_t index)
 
 bool cam_t::init(const bsp_t &bsp)
 {
-	m_pvs = NULL;
-	m_texturebits = NULL;
+	m_pvs = nullptr;
+	m_texturebits = nullptr;
 	
 	if(!bsp.getspawn(m_origin, m_yaw)) {
 		std::cerr << "failed to find spawn point, spawning at { 0, 0, 0 }" << std::endl;
 	}
 	// pvs for our current position
-	m_pvs = new uint8_t[(bsp.numleaves + 7) / 8];
-	if(m_pvs == NULL) {
+	m_pvs = new uint8_t[(bsp.m_leaves.size() + 7) / 8];
+	if(m_pvs == nullptr) {
 		return false;
 	}
 	// bitset of faces to render for each texture
-	m_texturebits = new uint64_t[((bsp.numfaces + 63) / 64) * bsp.miphdr->nummiptex];
-	if(m_texturebits == NULL) {
+	m_texturebits = new uint64_t[((bsp.m_faces.size() + 63) / 64) * bsp.m_mipofs.size()];
+	if(m_texturebits == nullptr) {
 		return false;
 	}
 
-	memset(m_pvs, 0, (bsp.numleaves + 7) / 8);
+	memset(m_pvs, 0, (bsp.m_leaves.size() + 7) / 8);
 	m_view = lookat(m_origin, m_pitch, m_yaw);
 	bsp.pvsfororigin(m_origin, m_pvs);
 	m_updated = true;

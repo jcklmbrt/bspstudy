@@ -1,4 +1,3 @@
-
 #ifndef _GOLDSRC_BSPFILE_H
 #define _GOLDSRC_BSPFILE_H
 
@@ -70,9 +69,9 @@ enum {
 
 
 struct dmodel_t {
-	float mins[3];
-	float maxs[3];
-	float origin[3];
+	glm::vec3 mins;
+	glm::vec3 maxs;
+	glm::vec3 origin;
 	int32_t headnode[MAX_MAP_HULLS];
 	int32_t visleafs;
 	int32_t firstface;
@@ -158,7 +157,7 @@ struct dclipnode_t {
 };
 
 struct dvertex_t {
-	float point[3];
+	glm::vec3 point;
 };
 
 struct dedge_t {
@@ -176,50 +175,29 @@ public:
 	void pvsfororigin(const glm::vec3 &point, uint8_t *pvs) const;
 	bool getspawn(glm::vec3 &origin, float &yaw) const;
 
-	/* pointers to lumps */
-	union {
-		void *datastart;
-		char *entdata;
-		entity_t *entities;
-	};
-	dplane_t *planes;
-	union {
-		uint8_t *textures;
-		dmiptexlump_t *miphdr;
-	};
-	dvertex_t *vertices;
-	uint8_t *vis;
-	dnode_t *nodes;
-	texinfo_t *texinfo;
-	dface_t *faces;
-	uint8_t *lighting;
-	dclipnode_t *clipnodes;
-	dleaf_t *leaves;
-	uint16_t *marksurfaces;
-	dedge_t *edges;
-	int32_t *surfedges;
-	dmodel_t *models;
+	entity_t *entities;
+	int32_t numentities;
 
-	/* lump sizes */
-	union {
-		int32_t sizestart;
-		int32_t entdatasize;
-		int32_t numentities;
-	};
-	int32_t numplanes;
-	int32_t miptexsize;
-	int32_t numvertices;
-	int32_t vissize;
-	int32_t numnodes;
-	int32_t numtexinfos;
-	int32_t numfaces; 
-	int32_t lightingsize;
-	int32_t numclipnodes;
-	int32_t numleaves;
-	int32_t nummarksurfaces;
-	int32_t numedges;
-	int32_t numsurfedges;
-	int32_t nummodels;
+	std::vector<int32_t> m_mipofs;
+	std::vector<uint8_t> m_textures;
+	
+	std::vector<char> m_entdata;
+	std::vector<dplane_t> m_planes;
+	std::vector<dvertex_t> m_vertices;
+
+	std::vector<miptex_t> m_miptex;
+	std::vector<uint8_t> m_vis;
+	std::vector<dnode_t> m_nodes;
+	std::vector<texinfo_t> m_texinfo;
+	std::vector<dface_t> m_faces;
+	std::vector<uint8_t> m_lighting;
+	std::vector<dclipnode_t> m_clipnodes;
+	std::vector<dleaf_t> m_leaves;
+	std::vector<uint16_t> m_marksurfaces;
+	std::vector<dedge_t> m_edges;
+	std::vector<int32_t> m_surfedges;
+	std::vector<dmodel_t> m_models;
 };
+
 
 #endif

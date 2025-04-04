@@ -21,35 +21,40 @@
 #define HUD_MAXIDX ((HUD_MAXVTX * 3) / 2)
 
 
+struct color_t {
+	float r, g, b, a;
+};
+
+
 struct hudvtx_t {
 	float x, y;
-	float r, g, b, a;
+	color_t color;
 	float s, t;
 };
 
 
 struct hud_t {
-	GLuint fontatlas;
-	stbtt_packedchar pc[FONT_RANGE];
-
-	GLuint shader;
-	GLuint vbo;
-	GLuint vao;
-	GLuint ibo;
-
-	glm::mat4 ortho;
-	GLuint u_ortho;
-
-	std::vector<GLuint> idx;
-	std::vector<hudvtx_t> vtx;
-	
 	bool init();
 	~hud_t();
 	void clear();
 	void drawelems();
 	void onresize(float w, float h);
 	void strsize(float &w, float &h, const char *s, size_t len) const;
-	int puts(float x, float y, const char *s, size_t len);
+	int puts(float x, float y, color_t color, const char *s, size_t len);
+private:
+	GLuint m_fontatlas;
+	stbtt_packedchar m_pc[FONT_RANGE];
+
+	GLuint m_shader;
+	GLuint m_vbo;
+	GLuint m_vao;
+	GLuint m_ibo;
+
+	glm::mat4 m_ortho;
+	GLuint u_ortho;
+
+	std::vector<GLuint> m_idx;
+	std::vector<hudvtx_t> m_vtx;
 };
 
 #endif

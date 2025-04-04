@@ -14,7 +14,7 @@
 
 static int s_width = 640;
 static int s_height = 480;
-static GLFWwindow *s_window = NULL;
+static GLFWwindow *s_window = nullptr;
 
 enum keyflags {
 	INPUT_LEFT = (1 << 0),
@@ -117,8 +117,8 @@ int main(int argc, char **argv)
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	s_window = glfwCreateWindow(s_width, s_height, argv[0], NULL, NULL);
-	if(s_window == NULL) {
+	s_window = glfwCreateWindow(s_width, s_height, argv[0], nullptr, nullptr);
+	if(s_window == nullptr) {
 		return EXIT_FAILURE;
 	}
 
@@ -157,22 +157,22 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	int32_t *brushmodels = new int32_t[bsp.nummodels];
+	int32_t *brushmodels = new int32_t[bsp.m_models.size()];
 	int32_t nummodels = 0;
 
 	glm::vec3 *origins = new glm::vec3[bsp.numentities];
 	for(int32_t i = 0; i < bsp.numentities; i++) {
 		bsp.entities[i].get("origin", origins[i]);
 		const char *model = bsp.entities[i].get("model");
-		if(model != NULL) {
+		if(model != nullptr) {
 			const char *classname = bsp.entities[i].get("classname");
 			if(!strncmp(classname, "func_", 5) && model[0] == '*') {
 				int32_t index = atoi(&model[1]);
-				if(index > 0 && index < bsp.nummodels) {
+				if(index > 0 && (size_t)index < bsp.m_models.size()) {
 					brushmodels[nummodels++] = index;
-					dmodel_t *mdl = &bsp.models[index];
+					//dmodel_t *mdl = &bsp.m_models[index];
 					for(int j = 0; j < 3; j++) {
-						mdl->origin[j] = origins[i][j];
+						//mdl->origin[j] = origins[i][j];
 					}
 				}
 			}
@@ -186,6 +186,9 @@ int main(int argc, char **argv)
 
 	size_t len;
 	char buf[2048];
+
+	color_t white = { 1.0f, 1.0f, 1.0f, 1.0f };
+	color_t shadow = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	// main loop
 	while(!glfwWindowShouldClose(s_window)) {
@@ -236,7 +239,8 @@ int main(int argc, char **argv)
 			       "Faces drawn: %d",
 			       1.0f / dt, filename, nv);
 
-		hud.puts(24.0f, 24.0f, buf, len);
+		hud.puts(25.0f, 25.0f, shadow, buf, len);
+		hud.puts(24.0f, 24.0f, white, buf, len);
 
 		for(int32_t i = 0; i < bsp.numentities; i++) {
 			if(!bsp.entities[i].get("origin")) {
@@ -247,7 +251,7 @@ int main(int argc, char **argv)
 			if(!isbitset(cam.m_pvs, leaf - 1)) {
 				continue;
 			}
-				
+			
 			const char *classname = bsp.entities[i].get("classname");
 
 			float x, y;
@@ -260,7 +264,8 @@ int main(int argc, char **argv)
 			h /= 2.0f;
 
 			if(cam.world2screen(origins[i], s_width, s_height, x, y)) {
-				hud.puts(x - w, y - h, classname, len);
+				hud.puts((x - w) + 1, (y - h) + 1, shadow, classname, len);
+				hud.puts(x - w, y - h, white, classname, len);
 			}
 		}
 		
@@ -272,7 +277,7 @@ int main(int argc, char **argv)
 
 	delete[] origins;
 	delete[] brushmodels;
-	if(s_window != NULL) {
+	if(s_window != nullptr) {
 		glfwDestroyWindow(s_window);
 	}
 	glfwTerminate();

@@ -1,7 +1,4 @@
-#include <string.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <iostream>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -26,35 +23,8 @@ struct rvtx_t {
 };
 
 
-static void miptexrgba(const miptex_t *mt, uint8_t *rgba)
-{
-	uint8_t *miptex_p = (uint8_t *)mt;
-	int32_t width = mt->width;
-	int32_t height = mt->height;
-	
-	uint8_t *palette = miptex_p + mt->offsets[3] + (width / 8) * (height / 8) + 2;
-	uint8_t *mip = miptex_p + mt->offsets[0];
-	
-	for(int i = 0; i < height * width; i++) {
-		int32_t p = mip[i] * 3;
-		rgba[i * 4 + 0] = palette[p + 0];
-		rgba[i * 4 + 1] = palette[p + 1];
-		rgba[i * 4 + 2] = palette[p + 2];
-		// https://developer.valvesoftware.com/wiki/Texture_prefixes
-		if(mip[i] == 255 && mt->name[0] == '{') {
-			for(int j = 0; j < 4; j++) {
-				rgba[i * 4 + j] = 0x0;
-			}
-		} else {
-			rgba[i * 4 + 3] = 0xFF;
-		}
-	}
-}
-
-
 bool render_t::loadtextures(const bsp_t &bsp)
 {
-	uint8_t *rgba = NULL;
 	const char *wadname = bsp.wadname();
 	
 	wad_t wad;
@@ -66,68 +36,37 @@ bool render_t::loadtextures(const bsp_t &bsp)
 		}
 	}
 
-	m_textures.resize(bsp.miphdr->nummiptex);
+	m_textures.resize(bsp.m_mipofs.size());
 	if(m_textures.data() == nullptr) {
 		return false;
 	}
 
 	glActiveTexture(GL_TEXTURE0);
-	glGenTextures(bsp.miphdr->nummiptex, m_textures.data());
+	glGenTextures(bsp.m_mipofs.size(), m_textures.data());
 
-	int32_t maxdim = 0;
-
-	for(int32_t i = 0; i < bsp.miphdr->nummiptex; i++) {
-		if(bsp.miphdr->dataofs[i] == 0 || bsp.miphdr->dataofs[i] == -1) {
-			continue;
-		}
-
-		miptex_t *miptex = (miptex_t *)(bsp.textures + bsp.miphdr->dataofs[i]);
-
-		int32_t dim = miptex->width * miptex->height;
-		
-		if(miptex->offsets[0] == 0) {
-			miptex = wad.getmiptex(miptex->name);
-			if(miptex != nullptr) {
-				dim = miptex->width * miptex->height;
-			}
-		}
-
-		if(maxdim < dim) {
-			maxdim = dim;
-		}
-	}
-
-	rgba = new uint8_t[maxdim * 4];
-	if(rgba == nullptr) {
-		return false;
-	}
+	miptex_t mt;
 	
-	for(int32_t i = 0; i < bsp.miphdr->nummiptex; i++) {
-		if(bsp.miphdr->dataofs[i] == 0 || bsp.miphdr->dataofs[i] == -1) {
+	for(size_t i = 0; i < bsp.m_mipofs.size(); i++) {
+		if(bsp.m_mipofs[i] == 0 || bsp.m_mipofs[i] == -1) {
 			continue;
 		}
 
-		miptex_t *miptex = (miptex_t *)(bsp.textures + bsp.miphdr->dataofs[i]);
-
-		if(miptex->offsets[0] == 0) {
+		if(!mt.load(bsp.m_textures.data() + bsp.m_mipofs[i])) {
 			// texture is stored in WAD file
-			const char *name = miptex->name;
-			miptex = wad.getmiptex(name);
-			if(miptex == NULL) {
-				fprintf(stderr, "%s: failed to find texture %s\n", wadname, name);
-				miptex = wad.getmiptex("aaatrigger");
-				if(miptex == NULL) {
+			if(!mt.load(wad, mt.name)) {
+				std::cerr << wadname << ": failed to find texture " << mt.name << std::endl;
+				if(!mt.load(wad, "aaatrigger")) {
 					continue;
 				}
 			}
 		}
-		miptexrgba(miptex, rgba);
+
 		glActiveTexture(GL_TEXTURE0);
 		glGenTextures(1, &m_textures[i]);
 		glBindTexture(GL_TEXTURE_2D, m_textures[i]);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, miptex->width, miptex->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mt.width, mt.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mt.rgba.data());
 	}
 	
 	return true;
@@ -137,38 +76,38 @@ bool render_t::loadtextures(const bsp_t &bsp)
 bool render_t::setupvertices(const bsp_t &bsp, const lightmap_t &lm)
 {
 	int32_t numvertices = 0;
-	for(int32_t i = 0; i < bsp.numfaces; i++) {
-		dface_t *face = &bsp.faces[i];
+	for(size_t i = 0; i < bsp.m_faces.size(); i++) {
+		const dface_t *face = &bsp.m_faces[i];
 		numvertices += face->numedges;
 	}
 
 	rvtx_t *vertices = new rvtx_t[numvertices];
 
 	m_idx.reserve(numvertices);
-	m_vtxlut = new int32_t[bsp.numfaces];
+	m_vtxlut = new int32_t[bsp.m_faces.size()];
 
 	int32_t nv = 0;
 
-	for(int32_t f = 0; f < bsp.numfaces; f++) {
-		dface_t *face = &bsp.faces[f];
-		texinfo_t *texinfo = &bsp.texinfo[face->texinfo];
-		int32_t mipofs = bsp.miphdr->dataofs[texinfo->miptex];
-		miptex_t *miptex = (miptex_t *)(bsp.textures + mipofs);
+	for(size_t f = 0; f < bsp.m_faces.size(); f++) {
+		const dface_t *face = &bsp.m_faces[f];
+		const texinfo_t *texinfo = &bsp.m_texinfo[face->texinfo];
+		int32_t mipofs = bsp.m_mipofs[texinfo->miptex];
+		miptex_t *miptex = (miptex_t *)(bsp.m_textures.data() + mipofs);
 
 		m_vtxlut[f] = nv; 
 
 		for(int32_t i = 0; i < face->numedges; i++) {
 		
-			int32_t edge = bsp.surfedges[face->firstedge + i];
+			int32_t edge = bsp.m_surfedges[face->firstedge + i];
 
 			int32_t v;
 			if(edge >= 0) {
-				v = bsp.edges[edge].v[0];
+				v = bsp.m_edges[edge].v[0];
 			} else {
-				v = bsp.edges[-edge].v[1];
+				v = bsp.m_edges[-edge].v[1];
 			}
 
-			dvertex_t vtx = bsp.vertices[v];
+			dvertex_t vtx = bsp.m_vertices[v];
 
 			float s = texinfo->vecs[0][0] * vtx.point[0] +
 				  texinfo->vecs[0][1] * vtx.point[1] +
@@ -230,20 +169,20 @@ size_t render_t::drawworld(const bsp_t &bsp, const cam_t &cam)
 	glBindVertexArray(m_vao);
 	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
-	for(int32_t i = 0; i < bsp.miphdr->nummiptex; i++) {
+	for(size_t i = 0; i < bsp.m_mipofs.size(); i++) {
 		m_idx.clear();
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, m_textures[i]);
 
-		uint64_t *facebits = &cam.m_texturebits[i * ((bsp.numfaces + 63) / 64)];
+		uint64_t *facebits = &cam.m_texturebits[i * ((bsp.m_faces.size() + 63) / 64)];
 		
-		for(int32_t f = 0; f < ((bsp.numfaces + 63) / 64); f++) {
+		for(size_t f = 0; f < ((bsp.m_faces.size() + 63) / 64); f++) {
 			uint64_t qword = facebits[f];
 			if(qword == 0) {
 				/* entire qword is empty, we can skip it */
 			} else for(uint64_t b = 0; b < 64; b++) {
 				if(qword & (1ull << b)) {
-					dface_t *face = &bsp.faces[f * 64 + b];
+					const dface_t *face = &bsp.m_faces[f * 64 + b];
 					int32_t v = m_vtxlut[f * 64 + b];
 					for(int32_t e = 0; e < face->numedges; e++) {
 						if(e >= 2) {
@@ -267,7 +206,7 @@ size_t render_t::drawworld(const bsp_t &bsp, const cam_t &cam)
 
 void render_t::drawmodel(const bsp_t &bsp, const cam_t &cam, size_t index)
 {
-	dmodel_t *mdl = &bsp.models[index];
+	const dmodel_t *mdl = &bsp.m_models[index];
 	
 	glm::mat4 mvp = cam.m_proj * cam.m_view;
 	mvp = glm::translate(mvp, glm::vec3(mdl->origin[0], mdl->origin[1], mdl->origin[2]));
@@ -286,7 +225,7 @@ void render_t::drawmodel(const bsp_t &bsp, const cam_t &cam, size_t index)
 	while(nc > 0) {
 		int16_t child = children[--nc];
 		if(child < 0) {
-			dleaf_t *leaf = &bsp.leaves[~child];
+			const dleaf_t *leaf = &bsp.m_leaves[~child];
 			for(int i = 0; i < 3; i++) {
 				mins[i] = (float)leaf->mins[i] + mdl->origin[i];
 				maxs[i] = (float)leaf->maxs[i] + mdl->origin[i];
@@ -295,9 +234,9 @@ void render_t::drawmodel(const bsp_t &bsp, const cam_t &cam, size_t index)
 				continue;
 			}
 			for(int32_t j = 0; j < leaf->nummarksurfaces; j++) {
-				int32_t f = bsp.marksurfaces[leaf->firstmarksurface + j];
-				dface_t *face = &bsp.faces[f];
-				texinfo_t *texinfo = &bsp.texinfo[face->texinfo];
+				int32_t f = bsp.m_marksurfaces[leaf->firstmarksurface + j];
+				const dface_t *face = &bsp.m_faces[f];
+				const texinfo_t *texinfo = &bsp.m_texinfo[face->texinfo];
 				m_idx.clear();
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, m_textures[texinfo->miptex]);
@@ -314,8 +253,8 @@ void render_t::drawmodel(const bsp_t &bsp, const cam_t &cam, size_t index)
 				glDrawElements(GL_TRIANGLES, m_idx.size(), GL_UNSIGNED_INT, 0);
 			}
 		} else {
-			dnode_t *node = &bsp.nodes[child];
-			dplane_t *plane = &bsp.planes[node->plane];
+			const dnode_t *node = &bsp.m_nodes[child];
+			const dplane_t *plane = &bsp.m_planes[node->plane];
 
 			for(int i = 0; i < 3; i++) {
 				mins[i] = (float)node->mins[i] + mdl->origin[i];

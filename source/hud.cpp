@@ -12,10 +12,10 @@
 
 hud_t::~hud_t()
 {
-	glDeleteShader(shader);
-	glDeleteBuffers(1, &vbo);
-	glDeleteBuffers(1, &ibo);
-	glDeleteVertexArrays(1, &vao);
+	glDeleteShader(m_shader);
+	glDeleteBuffers(1, &m_vbo);
+	glDeleteBuffers(1, &m_ibo);
+	glDeleteVertexArrays(1, &m_vao);
 }
 
 
@@ -50,24 +50,24 @@ bool hud_t::init()
 		"FragColor = vec4(a_color.xyz, alpha);\n"
 		"}";
 
-	shader = gl_compileshaders(vs_src, fs_src);
-	glUseProgram(shader);
+	m_shader = gl_compileshaders(vs_src, fs_src);
+	glUseProgram(m_shader);
 
-	u_ortho = glGetUniformLocation(shader, "u_ortho");
+	u_ortho = glGetUniformLocation(m_shader, "u_ortho");
 
-	GLuint u_texture = glGetUniformLocation(shader, "u_texture");
+	GLuint u_texture = glGetUniformLocation(m_shader, "u_texture");
 	glUniform1i(u_texture, 0);
 
-	glGenBuffers(1, &vbo);
-	glGenBuffers(1, &ibo);
-	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &m_vbo);
+	glGenBuffers(1, &m_ibo);
+	glGenVertexArrays(1, &m_vao);
 
-	glBindVertexArray(vao);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBindVertexArray(m_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(hudvtx_t), (void *)offsetof(hudvtx_t, x));
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(hudvtx_t), (void *)offsetof(hudvtx_t, r));
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(hudvtx_t), (void *)offsetof(hudvtx_t, color));
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(hudvtx_t), (void *)offsetof(hudvtx_t, s));
 	glEnableVertexAttribArray(2);
@@ -96,12 +96,12 @@ bool hud_t::init()
 	const float fontsize =  16.0f;
 	uint8_t *data = new uint8_t[FONTATLAS_WIDTH * FONTATLAS_HEIGHT];
 	stbtt_PackBegin(&ctx, data, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, 1, NULL);
-	stbtt_PackFontRange(&ctx, rawttf, 0, fontsize, 0, FONT_RANGE, pc);
+	stbtt_PackFontRange(&ctx, rawttf, 0, fontsize, 0, FONT_RANGE, m_pc);
 	stbtt_PackEnd(&ctx);
 
 	glActiveTexture(GL_TEXTURE0);
-	glGenTextures(1, &fontatlas);
-	glBindTexture(GL_TEXTURE_2D, fontatlas);
+	glGenTextures(1, &m_fontatlas);
+	glBindTexture(GL_TEXTURE_2D, m_fontatlas);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, data);
@@ -114,8 +114,8 @@ bool hud_t::init()
 
 void hud_t::clear()
 {
-	idx.clear();
-	vtx.clear();
+	m_idx.clear();
+	m_vtx.clear();
 }
 
 
@@ -125,18 +125,18 @@ void hud_t::drawelems()
 	glDisable(GL_DEPTH_TEST);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	
-	glUseProgram(shader);
+	glUseProgram(m_shader);
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, fontatlas);
+	glBindTexture(GL_TEXTURE_2D, m_fontatlas);
 
-	glUniformMatrix4fv(u_ortho, 1, GL_FALSE, glm::value_ptr(ortho));
+	glUniformMatrix4fv(u_ortho, 1, GL_FALSE, glm::value_ptr(m_ortho));
 	
-	glBindVertexArray(vao);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, vtx.size() * sizeof(hudvtx_t), vtx.data(), GL_STATIC_DRAW);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(GLuint), idx.data(), GL_STATIC_DRAW);
-	glDrawElements(GL_TRIANGLES, idx.size(), GL_UNSIGNED_INT, 0);
+	glBindVertexArray(m_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+	glBufferData(GL_ARRAY_BUFFER, m_vtx.size() * sizeof(hudvtx_t), m_vtx.data(), GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ibo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_idx.size() * sizeof(GLuint), m_idx.data(), GL_STATIC_DRAW);
+	glDrawElements(GL_TRIANGLES, m_idx.size(), GL_UNSIGNED_INT, 0);
 }
 
 
@@ -147,7 +147,7 @@ void hud_t::strsize(float &w, float &h, const char *s, size_t len) const
 	float dx = 0.0f;
 	for(size_t i = 0; i < len; i++) {
 		stbtt_aligned_quad q;
-		stbtt_GetPackedQuad(pc, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, s[i], &dx, &h, &q, 0);
+		stbtt_GetPackedQuad(m_pc, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, s[i], &dx, &h, &q, 0);
 		if(s[i] == '\n') {
 			h += FONT_SIZE;
 			dx = 0.0f;
@@ -157,12 +157,12 @@ void hud_t::strsize(float &w, float &h, const char *s, size_t len) const
 }
 
 
-int hud_t::puts(float x, float y, const char *s, size_t len)
+int hud_t::puts(float x, float y, color_t color, const char *s, size_t len)
 {
 	float dx = x;
 	for(size_t i = 0; i < len; i++) {
 		stbtt_aligned_quad q;
-		stbtt_GetPackedQuad(pc, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, s[i], &dx, &y, &q, 0);
+		stbtt_GetPackedQuad(m_pc, FONTATLAS_WIDTH, FONTATLAS_HEIGHT, s[i], &dx, &y, &q, 0);
 
 		if(s[i] == '\n') {
 			dx = x;
@@ -170,18 +170,18 @@ int hud_t::puts(float x, float y, const char *s, size_t len)
 			continue;
 		}
 		
-		int32_t nv = vtx.size();
-		vtx.push_back({ q.x0, q.y0, 1.0f, 1.0f, 1.0f, 1.0f, q.s0, q.t0 });
-		vtx.push_back({ q.x1, q.y0, 1.0f, 1.0f, 1.0f, 1.0f, q.s1, q.t0 });
-		vtx.push_back({ q.x0, q.y1, 1.0f, 1.0f, 1.0f, 1.0f, q.s0, q.t1 });
-		vtx.push_back({ q.x1, q.y1, 1.0f, 1.0f, 1.0f, 1.0f, q.s1, q.t1 });
+		int32_t nv = m_vtx.size();
+		m_vtx.push_back({ q.x0, q.y0, color, q.s0, q.t0 });
+		m_vtx.push_back({ q.x1, q.y0, color, q.s1, q.t0 });
+		m_vtx.push_back({ q.x0, q.y1, color, q.s0, q.t1 });
+		m_vtx.push_back({ q.x1, q.y1, color, q.s1, q.t1 });
 
-		idx.push_back(nv + 0);
-		idx.push_back(nv + 1);
-		idx.push_back(nv + 2);
-		idx.push_back(nv + 1);
-		idx.push_back(nv + 3);
-		idx.push_back(nv + 2);
+		m_idx.push_back(nv + 0);
+		m_idx.push_back(nv + 1);
+		m_idx.push_back(nv + 2);
+		m_idx.push_back(nv + 1);
+		m_idx.push_back(nv + 3);
+		m_idx.push_back(nv + 2);
 	}
 	return len;
 }
@@ -189,5 +189,5 @@ int hud_t::puts(float x, float y, const char *s, size_t len)
 
 void hud_t::onresize(float w, float h)
 {
-	ortho = glm::ortho(0.0f, w, h, 0.0f);
+	m_ortho = glm::ortho(0.0f, w, h, 0.0f);
 }

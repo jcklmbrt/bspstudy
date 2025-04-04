@@ -11,22 +11,22 @@
 // https://github.com/ValveSoftware/halflife/blob/master/utils/qrad/lightmap.c#L563
 static void faceextents(const bsp_t &bsp, const dface_t &face, lmface_t &s)
 {
-	texinfo_t *texinfo = &bsp.texinfo[face.texinfo];
+	const texinfo_t *texinfo = &bsp.m_texinfo[face.texinfo];
 
 	glm::vec2 mins = {};
 	glm::vec2 maxs = {};
 	
 	bool first = true;
 	for(int32_t i = 0; i < face.numedges; i++) {
-		int32_t edge = bsp.surfedges[face.firstedge + i];
+		int32_t edge = bsp.m_surfedges[face.firstedge + i];
 		int32_t v;
 		if(edge >= 0) {
-			v = bsp.edges[edge].v[0];
+			v = bsp.m_edges[edge].v[0];
 		} else {
-			v = bsp.edges[-edge].v[1];
+			v = bsp.m_edges[-edge].v[1];
 		}
 		
-		dvertex_t vtx = bsp.vertices[v];
+		dvertex_t vtx = bsp.m_vertices[v];
 
 		float s = texinfo->vecs[0][0] * vtx.point[0] +
 			texinfo->vecs[0][1] * vtx.point[1] +
@@ -76,17 +76,17 @@ void lightmap_t::texcoords(int32_t face, float s, float t, float &lm_s, float &l
 
 bool lightmap_t::init(const bsp_t &bsp)
 {
-	m_faces = new lmface_t[bsp.numfaces];
+	m_faces = new lmface_t[bsp.m_faces.size()];
 	if(m_faces == nullptr) {
 		return false;
 	}
 
-	m_rects = new stbrp_rect[bsp.numfaces];
+	m_rects = new stbrp_rect[bsp.m_faces.size()];
 	if(m_rects == nullptr) {
 		return false;
 	}
 
-	memset(m_rects, 0, sizeof(stbrp_rect) * bsp.numfaces);
+	memset(m_rects, 0, sizeof(stbrp_rect) * bsp.m_faces.size());
 
 	glActiveTexture(LIGHTMAP_TEXTURE_UNIT);
 	glGenTextures(1, &m_texture);
@@ -96,8 +96,8 @@ bool lightmap_t::init(const bsp_t &bsp)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
-	for(int32_t i = 0; i < bsp.numfaces; i++) {
-		dface_t *face = &bsp.faces[i];
+	for(size_t i = 0; i < bsp.m_faces.size(); i++) {
+		const dface_t *face = &bsp.m_faces[i];
 		if(face->lightmapoffset == -1) {
 			continue;
 		}
@@ -119,18 +119,18 @@ bool lightmap_t::init(const bsp_t &bsp)
 	}
 	
 	stbrp_init_target(&ctx, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, nodes, numnodes);
-	stbrp_pack_rects(&ctx, m_rects, bsp.numfaces);
+	stbrp_pack_rects(&ctx, m_rects, bsp.m_faces.size());
 
 	delete[] nodes;
 
-	for(int32_t i = 0; i < bsp.numfaces; i++) {
+	for(size_t i = 0; i < bsp.m_faces.size(); i++) {
 		// ^^^ 266: remove the padding for further calculations
 		m_rects[i].w -= LIGHTMAP_SPACING;
 		m_rects[i].h -= LIGHTMAP_SPACING;
 		
-		dface_t *face = &bsp.faces[i];
+		const dface_t *face = &bsp.m_faces[i];
 		if(m_rects[i].was_packed && face->lightmapoffset != -1) {
-			uint8_t *data = &bsp.lighting[face->lightmapoffset];
+			const uint8_t *data = &bsp.m_lighting[face->lightmapoffset];
 			glTexSubImage2D(GL_TEXTURE_2D, 0,
 					m_rects[i].x, m_rects[i].y,
 					m_rects[i].w, m_rects[i].h,
