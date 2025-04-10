@@ -9,6 +9,10 @@
 #include "little_endian.hpp"
 namespace le = little_endian;
 
+struct texatlas_t {
+	//stbrp_rect *m_rects;
+};
+
 bool wad_t::open(const char *filename)
 {
 	// from my tests less than 10% of the textures in the wad file are actually used by the map.

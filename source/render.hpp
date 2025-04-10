@@ -2,6 +2,7 @@
 #define _MY_GL_H
 
 #include <vector>
+#include <memory>
 
 #include <glad/gl.h>
 #include <stdbool.h>
@@ -10,9 +11,13 @@
 #include "bsp.hpp"
 #include "camera.hpp"
 
+#include <stb_rect_pack.h>
+
 struct lightmap_t;
 
 struct render_t {
+	static constexpr size_t ATLAS_WIDTH = 1024;
+	static constexpr size_t ATLAS_HEIGHT = 1024;
 public:
 	bool init(const bsp_t &bsp, const lightmap_t &lm);
 	~render_t();
@@ -31,9 +36,11 @@ private:
 	// offset into the vertex buffer for each face
 	// size will be dface_t::numedges
 	int32_t *m_vtxlut = nullptr;
-	// array of textures
-	// index will be mapped to texinfo_t::miptex
+	// texture atlas for each texture in LUMP_TEXTURES
+	// indexed by texinfo_t::miptex, repeat elements means same atlas.
 	std::vector<GLuint> m_textures;
+	// rect within atlas for each texture
+	std::vector<stbrp_rect> m_rects;
 	//
 	std::vector<GLuint> m_idx;
 };

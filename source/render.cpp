@@ -1,3 +1,6 @@
+#include <array>
+#include <memory>
+#include <algorithm>
 #include <iostream>
 
 #include <glm/glm.hpp>
@@ -22,7 +25,6 @@ struct rvtx_t {
 	float ls, lt; // lightmap coords
 };
 
-
 bool render_t::loadtextures(const bsp_t &bsp)
 {
 	const char *wadname = bsp.wadname();
@@ -37,13 +39,10 @@ bool render_t::loadtextures(const bsp_t &bsp)
 	}
 
 	m_textures.resize(bsp.m_mipofs.size());
-	if(m_textures.data() == nullptr) {
-		return false;
-	}
 
 	glActiveTexture(GL_TEXTURE0);
 	glGenTextures(bsp.m_mipofs.size(), m_textures.data());
-
+	
 	miptex_t mt;
 	
 	for(size_t i = 0; i < bsp.m_mipofs.size(); i++) {
@@ -55,6 +54,10 @@ bool render_t::loadtextures(const bsp_t &bsp)
 			// texture is stored in WAD file
 			if(!mt.load(wad, mt.name)) {
 				std::cerr << wadname << ": failed to find texture " << mt.name << std::endl;
+				// load an annoying texture on failure
+				// John Romero talks about this in his talk
+				// "The Early Days of id Software: Programming Principles"
+				// https://www.youtube.com/watch?v=IzqdZAYcwfY&t=728s
 				if(!mt.load(wad, "aaatrigger")) {
 					continue;
 				}
@@ -125,7 +128,7 @@ bool render_t::setupvertices(const bsp_t &bsp, const lightmap_t &lm)
 			if(face->lightmapoffset > 0) {
 				lm.texcoords(f, s, t, lm_s, lm_t);
 			}
-
+			
 			s /= miptex->width;
 			t /= miptex->height;
 

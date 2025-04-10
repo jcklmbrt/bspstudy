@@ -9,7 +9,7 @@
 
 // needs to be exactly the same as CalcFaceExtents.
 // https://github.com/ValveSoftware/halflife/blob/master/utils/qrad/lightmap.c#L563
-static void faceextents(const bsp_t &bsp, const dface_t &face, lmface_t &s)
+void faceextents(const bsp_t &bsp, const dface_t &face, lmface_t &s)
 {
 	const texinfo_t *texinfo = &bsp.m_texinfo[face.texinfo];
 
@@ -112,7 +112,7 @@ bool lightmap_t::init(const bsp_t &bsp)
 	}
 
 	stbrp_context ctx;
-	int numnodes = LIGHTMAP_WIDTH * 16;
+	int numnodes = LIGHTMAP_WIDTH * 2;
 	stbrp_node *nodes = new stbrp_node[numnodes];
 	if(nodes == nullptr) {
 		return false;

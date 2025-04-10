@@ -170,10 +170,6 @@ int main(int argc, char **argv)
 				int32_t index = atoi(&model[1]);
 				if(index > 0 && (size_t)index < bsp.m_models.size()) {
 					brushmodels[nummodels++] = index;
-					//dmodel_t *mdl = &bsp.m_models[index];
-					for(int j = 0; j < 3; j++) {
-						//mdl->origin[j] = origins[i][j];
-					}
 				}
 			}
 		}
